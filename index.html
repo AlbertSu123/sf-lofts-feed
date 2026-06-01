@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>LoftTok · SF Lofts</title>
+<style>
+  :root{
+    --ig-blue:#0095f6; --ig-red:#ed4956; --line:#dbdbdb; --ink:#0f1419; --muted:#737373;
+    --card:#ffffff; --bg:#000;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);}
+  /* ===== TikTok vertical snap feed ===== */
+  #feed{height:100dvh;overflow-y:scroll;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  #feed::-webkit-scrollbar{display:none;}
+  .post{scroll-snap-align:start;scroll-snap-stop:always;min-height:100dvh;display:flex;align-items:flex-start;justify-content:center;
+    padding:0;position:relative;}
+  .card{width:100%;max-width:470px;background:var(--card);min-height:100dvh;display:flex;flex-direction:column;position:relative;}
+  @media(min-width:600px){
+    .post{align-items:center;padding:16px 0;}
+    .card{min-height:auto;border:1px solid #2a2a2a;border-radius:14px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.6);}
+  }
+  /* rank chip (overlaid on photo) */
+  .rank{position:absolute;top:10px;left:10px;z-index:6;background:rgba(0,0,0,.62);color:#fff;font-size:11px;font-weight:700;
+    padding:4px 9px;border-radius:20px;backdrop-filter:blur(6px);letter-spacing:.3px;}
+  .verifybar{position:absolute;top:40px;left:10px;z-index:6;background:#10b981;color:#fff;font-size:10px;font-weight:800;
+    padding:4px 8px;border-radius:20px;letter-spacing:.4px;text-transform:uppercase;box-shadow:0 1px 4px rgba(0,0,0,.3);}
+  /* ===== IG header ===== */
+  .head{display:flex;align-items:center;gap:10px;padding:9px 12px;}
+  .avatar{width:34px;height:34px;border-radius:50%;flex:none;padding:2px;
+    background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);}
+  .avatar > div{width:100%;height:100%;border-radius:50%;background:#222 center/cover;border:2px solid #fff;
+    display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;}
+  .uname{font-size:14px;font-weight:600;line-height:1.15;display:flex;align-items:center;gap:4px;}
+  .uname .ck{width:14px;height:14px;}
+  .uloc{font-size:11px;color:#262626;line-height:1.2;}
+  .more{margin-left:auto;font-size:20px;color:#262626;letter-spacing:1px;cursor:pointer;}
+  /* ===== media carousel ===== */
+  .media{position:relative;background:#000;aspect-ratio:4/5;width:100%;overflow:hidden;}
+  .track{display:flex;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+  .track::-webkit-scrollbar{display:none;}
+  .slide{flex:0 0 100%;width:100%;height:100%;scroll-snap-align:center;position:relative;background:#111;}
+  .slide img{width:100%;height:100%;object-fit:cover;display:block;}
+  .slide iframe{width:100%;height:100%;border:0;display:block;}
+  .maplbl{position:absolute;left:12px;bottom:12px;z-index:3;background:rgba(0,0,0,.66);color:#fff;font-size:12px;font-weight:600;
+    padding:6px 11px;border-radius:18px;backdrop-filter:blur(4px);display:flex;align-items:center;gap:6px;pointer-events:none;}
+  .counter{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;font-weight:700;
+    padding:3px 9px;border-radius:14px;z-index:4;}
+  .dots{position:absolute;left:0;right:0;bottom:9px;display:flex;justify-content:center;gap:4px;z-index:4;pointer-events:none;}
+  .dots i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.55);transition:.2s;}
+  .dots i.on{background:#fff;transform:scale(1.15);}
+  .arrow{position:absolute;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;
+    background:rgba(255,255,255,.85);border:none;display:none;align-items:center;justify-content:center;cursor:pointer;z-index:5;font-size:15px;color:#222;}
+  .arrow.l{left:8px;} .arrow.r{right:8px;}
+  @media(min-width:600px){.media:hover .arrow{display:flex;}}
+  /* ===== TikTok right rail overlay ===== */
+  .rail{position:absolute;right:8px;bottom:14px;z-index:5;display:flex;flex-direction:column;align-items:center;gap:15px;}
+  .rail button{background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff;font-size:11px;font-weight:700;}
+  .rail .ic{width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:24px;
+    filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));}
+  .rail .ic.act{color:var(--ig-red);}
+  .rail span{filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));}
+  /* ===== actions + body ===== */
+  .acts{display:flex;align-items:center;gap:16px;padding:8px 12px 4px;font-size:24px;}
+  .acts .sp{margin-left:auto;}
+  .acts svg{width:25px;height:25px;cursor:pointer;}
+  .likes{padding:0 12px;font-weight:600;font-size:14px;}
+  .cap{padding:5px 12px 0;font-size:14px;line-height:1.4;}
+  .cap b{font-weight:600;margin-right:5px;}
+  .price{font-size:20px;font-weight:800;letter-spacing:-.3px;}
+  .specs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px;}
+  .chip{background:#f1f1f1;border-radius:16px;padding:4px 10px;font-size:12px;font-weight:600;color:#333;}
+  .chip.hot{background:#fff0f0;color:#d33;}
+  .feat{color:#262626;}
+  .tags{color:#3a6ea5;}
+  .listing{display:inline-flex;align-items:center;gap:6px;margin-top:9px;background:var(--ig-blue);color:#fff;
+    text-decoration:none;font-weight:700;font-size:13px;padding:9px 14px;border-radius:9px;}
+  .listing:active{opacity:.85;}
+  .src{font-size:11px;color:var(--muted);margin-top:7px;}
+  /* comments */
+  .cmh{padding:12px 12px 2px;font-size:13px;color:var(--muted);font-weight:600;cursor:pointer;}
+  .cmts.collapsed .cm:nth-child(n+3){display:none;}
+  .cmts{padding:2px 12px 4px;display:flex;flex-direction:column;gap:11px;}
+  .cm{display:flex;gap:9px;font-size:13.5px;line-height:1.35;}
+  .cmav{width:30px;height:30px;border-radius:50%;flex:none;background:center/cover #ddd;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;}
+  .cm .body b{font-weight:600;margin-right:5px;}
+  .cm .meta{color:var(--muted);font-size:11px;margin-top:3px;display:flex;gap:12px;}
+  .cm .meta span{font-weight:600;}
+  .cm .hrt{margin-left:auto;color:#bbb;font-size:14px;align-self:flex-start;padding-top:3px;}
+  .ts{padding:12px 12px 6px;color:var(--muted);font-size:10px;letter-spacing:.4px;text-transform:uppercase;}
+  .addcm{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);padding:11px 12px;color:var(--muted);font-size:13px;margin-top:auto;}
+  .addcm .e{font-size:18px;}
+  /* swipe hint */
+  .hint{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:30;color:#fff;font-size:12px;
+    background:rgba(0,0,0,.5);padding:7px 14px;border-radius:20px;backdrop-filter:blur(6px);display:flex;align-items:center;gap:7px;
+    animation:bob 1.6s ease-in-out infinite;pointer-events:none;}
+  @keyframes bob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-5px)}}
+  .wm{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:6;color:#fff;font-weight:800;font-size:13px;
+    letter-spacing:-.2px;pointer-events:none;text-shadow:0 1px 5px rgba(0,0,0,.7);}
+  .wm b{color:#fe2c55;}
+</style>
+</head>
+<body>
+<div id="feed"></div>
+<div class="hint" id="hint">↑ swipe for next unit</div>
+
+<script>
+const HEART=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>`;
+const COMMENT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 21l1.9-4.1A8.4 8.4 0 0 1 21 11.5z"/></svg>`;
+const SHARE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+const SAVE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
+const CHECK=`<svg class="ck" viewBox="0 0 24 24" fill="#0095f6"><path d="M12 2l2.4 1.8 3 .1 1 2.8 2.3 1.9-1 2.8 1 2.8-2.3 1.9-1 2.8-3 .1L12 22l-2.4-1.8-3-.1-1-2.8L3.3 15l1-2.8-1-2.8 2.3-1.9 1-2.8 3-.1z"/><path d="M10.6 14.6l-2.2-2.2-1.1 1.1 3.3 3.3 5.6-5.6-1.1-1.1z" fill="#fff"/></svg>`;
+
+const APTS = [{
+  rank:"#1 of 100 · BEST VALUE",
+  handle:"thegrid.soma",
+  initials:"TG",
+  location:"673 Brannan St · SoMa, San Francisco",
+  verified:true,
+  price:"$3,941/mo",
+  specs:[{t:"2 bd",hot:false},{t:"2 ba",hot:false},{t:"1,005 sqft",hot:true},{t:"Loft",hot:false},{t:"Avail NOW",hot:true}],
+  caption:"Industrial-chic 2BR/2BA loft in the heart of SoMa 🏙️ Soaring ceilings, floor-to-ceiling windows + polished concrete. Unit 2-501 — move-in ready today.",
+  features:"✔︎ 1,005 sqft · 2 full baths (rare for a loft)\n✔︎ High ceilings · fireplace · dishwasher\n✔︎ Rooftop + on-site management (Berkshire)\n✔︎ Walker's Paradise · 2 blocks to Caltrain",
+  tags:"#sflofts #soma #livework #2bedroom #industrialchic",
+  likes:"2,841",
+  photos:[
+    "https://images1.apartments.com/i2/AIKx8PmtbWr6PUlELBcy1YpLYHf4JgCcrPiOxIyz7qU/116/the-grid-soma-san-francisco-ca-primary-photo.jpg",
+    "__MAP__",
+    "https://images1.apartments.com/i2/XKW0irhIoKtHyxdiI5bxAeLRqXOniXcZFTHRvK6_8YY/111/the-grid-soma-san-francisco-ca-alt-exterior.jpg",
+    "https://images1.apartments.com/i2/Kjc1f0B89g2wP-2oGhn7JzI2FQDFuH75Qd3TGOyV6SE/111/the-grid-soma-san-francisco-ca-alt-exterior.jpg",
+    "https://images1.apartments.com/i2/Oi1oE6seblOB7fHsUA0rGW2sDDz4U2XLUFdcPbXdvlQ/111/the-grid-soma-san-francisco-ca-alt-exterior.jpg",
+    "https://images1.apartments.com/i2/VnZuON0N9YQrCrcdouSWYXWexLXbcPmplTREm5fkDt8/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/6h56EJ1A-u2tJhWwB5aTddMinDFsRm4mJeuk54B4kYI/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/J85VtITvyks3YfFGvRDWV9VjDCnp0swbHe6th2NqUXA/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/xV-FvT0sqcPilushR5TXgGkbe8a24rsUW7Jg4hAUV8E/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/5Sz-0p5DoUb27kM5UaDlKy72-Zg3_FEudDPfnBDWl44/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/Ogk-uudX1ZEqZ-O-iy--mmSVIj1rXVB2tAr6gNxu-F4/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/cT5L04U5CtbQplA7an4IWPTO-Vf5iP2S2ftj1nvFqSk/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/RwF8ZhG8xJP28PRbSQixbqpKBy4PJ4-L-lS9QgAR_hI/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/znApxBHbkih3d9Or50xWk8I0cbDF_1m5RQVXiUarG48/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/zodzoWDA7NGP85ZVsPzpqfkiueig6BJkki8yUDGEIzk/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/OaNhYm2zYEXy1u5vEf-4KWRQCqyHSjNcZWav_5fi5DA/111/the-grid-soma-san-francisco-ca-building-photo.jpg",
+    "https://images1.apartments.com/i2/vOaqbWv3dKzfuPToP9wAUgUudkDShiNWbJqrYG7C-gw/111/the-grid-soma-san-francisco-ca-entrance.jpg",
+    "https://images1.apartments.com/i2/rUGRLKaCh3gU6X6Uxd3cToqDj-tAR14sQdY3JgDDCQc/111/the-grid-soma-san-francisco-ca-context.jpg",
+    "https://images1.apartments.com/i2/DFs7vy-UJcik9oObQfx-MtapZt-kLvyaelGErcGPwFA/111/the-grid-soma-san-francisco-ca-90-lookdown.jpg",
+    "https://images1.apartments.com/i2/yd5Byss7yPmbnSN7T9FKbbGnLt88jMz39CNSeoR7jBA/111/the-grid-soma-san-francisco-ca-floorplan.jpg",
+    "https://images1.apartments.com/i2/RkOsqSjgFLoHS3JK7JiIsLiR_ozsqdUsKpnE1fzLzCo/111/the-grid-soma-san-francisco-ca-floorplan.png",
+    "https://images1.apartments.com/i2/OO_cHPN0RIjbubbMCSqkTdDgmJ48A64xwzmwWjWCT_M/111/the-grid-soma-san-francisco-ca-floorplan.png",
+    "https://images1.apartments.com/i2/vISYuK_wGh4R-1RX9u8Okiq9DaIcnJDAEWHkoHLJJf8/111/the-grid-soma-san-francisco-ca-floorplan.png"
+  ],
+  mapq:"673 Brannan St, San Francisco, CA 94107",
+  link:"https://www.apartments.com/the-grid-soma-san-francisco-ca/9jj4dj5/",
+  linktext:"View on Apartments.com",
+  source:"Verified available today · apartments.com · Berkshire",
+  comments:[
+    {u:"marina_moves",i:"MM",c:"1,005 sqft + TWO full baths for $3,941 in SoMa?? genuinely unheard of rn 😍",l:"312",t:"2h"},
+    {u:"caltrain_carl",i:"CC",c:"2 blocks to Caltrain + Whole Foods across the street. elite for commuters 🚆",l:"144",t:"4h"},
+    {u:"sf.transplant",i:"ST",c:"lived in this building — walls are on the thin side & you hear the 280 hum at night. tour after 9pm before signing",l:"289",t:"6h"},
+    {u:"loft.lover",i:"LL",c:"those ceilings are unreal. just know lofts = $$$ to heat in winter, ask about the PG&E avg",l:"97",t:"7h"},
+    {u:"budget.bae",i:"BB",c:"parking is +$300/mo and not every unit has in-unit W/D — confirm for 2-501 before you fall in love",l:"176",t:"9h"},
+    {u:"doggo.dad",i:"DD",c:"dog park literally next door 🐕 my guy approves",l:"61",t:"11h"},
+    {u:"skeptic.sam",i:"SS",c:"'industrial chic' = exposed ducts + echoey. looks 🔥 on camera, louder irl. go see it",l:"203",t:"14h"},
+    {u:"plantmom.pia",i:"PP",c:"south light through those windows is insane for plants ☀️🪴 10/10",l:"88",t:"1d"},
+    {u:"dealhunter",i:"DH",c:"they're running 'lease in 24hr → $500 off first month'. it's negotiable, don't pay sticker 💸",l:"154",t:"1d"},
+    {u:"midmarket.skeptic",i:"MS",c:"location is technically western SoMa near the freeway — fine by day, dead at night. ymmv",l:"72",t:"2d"}
+  ]
+},
+{
+  rank:"#2 of 100 · CHEAPEST 2BR/2BA",
+  handle:"missionbay.2br", initials:"MB", location:"Mission Bay · San Francisco", verified:true,
+  price:"$3,465/mo",
+  specs:[{t:"2 bd",hot:false},{t:"2 ba",hot:true},{t:"New build",hot:false},{t:"Avail NOW",hot:true}],
+  caption:"Iconic 2BR / 2BA in Mission Bay 🌊 Floor-to-ceiling glass, resort-style amenities, steps from Chase Center + the waterfront.",
+  features:"✔︎ 2 full baths · in-unit W/D\n✔︎ Pool · fitness center · roof lounge\n✔︎ Walk to Caltrain + Chase Center\n✔︎ New-construction luxury tower",
+  tags:"#missionbay #2bedroom #2bath #sfapartments #waterfront",
+  likes:"1,932",
+  photos:["https://images.craigslist.org/00O0O_jTXxNI4Wte4_0gw0co_600x450.jpg","__MAP__","https://images.craigslist.org/00H0H_7tQGDESsGf7_0uY0hq_600x450.jpg","https://images.craigslist.org/00d0d_t0i63GL86F_0x20lZ_600x450.jpg","https://images.craigslist.org/00o0o_974iFzk3pna_09G05r_600x450.jpg","https://images.craigslist.org/00K0K_2q3JIGrfrRB_0jm0cU_600x450.jpg","https://images.craigslist.org/00G0G_bwwOpOwyKBN_0CI0lM_600x450.jpg","https://images.craigslist.org/00n0n_8mHUwd1CxDa_0ww0oo_600x450.jpg"],
+  mapq:"Mission Bay, San Francisco, CA",
+  link:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-iconic-2br-2ba-mission/7937988052.html",
+  linktext:"View listing on Craigslist", source:"Listed today · Craigslist",
+  comments:[
+    {u:"bayview.babe",i:"BB",c:"2BR/2BA in Mission Bay for $3,465?? that's a steal for new construction 🤯",l:"221",t:"3h"},
+    {u:"chase.center",i:"CC",c:"walk to Warriors games + Caltrain, location slaps 🏀",l:"140",t:"5h"},
+    {u:"quiet.please",i:"QP",c:"it's a big corporate complex — amenities are 🔥 but can feel a little sterile/sterile hallways",l:"96",t:"8h"},
+    {u:"foggy.dev",i:"FD",c:"Mission Bay gets WIND off the bay, not fog — it's breezy, bring layers",l:"54",t:"12h"},
+    {u:"first.timer",i:"FT",c:"ask about move-in specials, these towers always have a concession somewhere 💸",l:"71",t:"1d"},
+    {u:"no.car.life",i:"NC",c:"zero nightlife walking distance, you'll uber to anything fun. great for WFH tho",l:"63",t:"1d"}
+  ]
+},
+{
+  rank:"#3 of 100 · MOST SPACE",
+  handle:"199.newmontgomery", initials:"NM", location:"199 New Montgomery St · SoMa / South Beach", verified:true,
+  price:"$5,000/mo",
+  specs:[{t:"2 bd",hot:false},{t:"+ den",hot:true},{t:"2 ba",hot:false},{t:"1,300 sqft",hot:true}],
+  caption:"Spacious 2 Bed + Den / 2 Bath condo at 199 New Montgomery 🛋️ Granite + Bosch kitchen, hardwood, in-unit W/D. The den = real WFH room.",
+  features:"✔︎ 1,300 sqft — biggest on the list\n✔︎ Bonus den/alcove + 2 full baths\n✔︎ Steps to SFMOMA + Yerba Buena\n✔︎ Stainless Bosch · in-unit laundry",
+  tags:"#soma #southbeach #2bedplusden #condo #sfliving",
+  likes:"2,210",
+  photos:["https://images.craigslist.org/00P0P_f5whHVjXZbH_0lM0t2_600x450.jpg","__MAP__","https://images.craigslist.org/00909_kx2wPVuJpJK_0CI0t2_600x450.jpg","https://images.craigslist.org/00t0t_bGfJW52onCZ_0CI0t2_600x450.jpg","https://images.craigslist.org/01111_2HNjrk6nGzp_0CH0t2_600x450.jpg","https://images.craigslist.org/01717_kscprUR5Oa3_0CI0t2_600x450.jpg","https://images.craigslist.org/00p0p_eZ4SidR9xe0_0CI0t2_600x450.jpg","https://images.craigslist.org/00N0N_6WSHHLBtk7x_0CI0t2_600x450.jpg"],
+  mapq:"199 New Montgomery St, San Francisco, CA 94105",
+  link:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-conveniently-located/7933267269.html",
+  linktext:"View listing on Craigslist", source:"Listed today · Craigslist",
+  comments:[
+    {u:"den.dreams",i:"DD",c:"a DEN + 1,300 sqft means a real home office, not a closet desk. rare in SF 🙌",l:"188",t:"4h"},
+    {u:"yerbabuena.yes",i:"YB",c:"steps from SFMOMA + Yerba Buena gardens, primo culture location",l:"102",t:"7h"},
+    {u:"maxbudget",i:"MB",c:"$5k is the ceiling but for 1,300sqft + 2 baths it actually pencils out vs a smaller 2br",l:"77",t:"10h"},
+    {u:"hoa.watch",i:"HW",c:"it's an owner condo so the landlord sets rules — confirm pets + parking BEFORE you apply",l:"131",t:"14h"},
+    {u:"market.st",i:"MS",c:"New Montgomery is lively by day, a little gritty near Market at night. fine imo",l:"66",t:"1d"},
+    {u:"light.chaser",i:"LC",c:"ask which floor — lower units get dim light squeezed between the towers",l:"58",t:"2d"}
+  ]
+},
+{
+  rank:"#4 of 100 · NEW + RENT-CONTROLLED",
+  handle:"341a.oak", initials:"3O", location:"341A Oak St · Hayes Valley", verified:true,
+  price:"$4,450/mo",
+  specs:[{t:"2 bd",hot:false},{t:"1,050 sqft",hot:true},{t:"New constr",hot:false},{t:"Rent-controlled",hot:true}],
+  caption:"Brand-new 2BR in Hayes Valley 🌿 that's ALSO rent-controlled — a genuine unicorn. Modern finishes, big windows, half a block to the action.",
+  features:"✔︎ 1,050 sqft, new construction\n✔︎ Rent-controlled building (rare for new)\n✔︎ ½ block to Hayes St shops + Patricia's Green\n✔︎ MUNI everywhere, walkable to Civic Center BART",
+  tags:"#hayesvalley #2bedroom #rentcontrolled #newconstruction",
+  likes:"3,051",
+  photos:["https://images.craigslist.org/01111_VIfCxIRB8k_0lM0t2_600x450.jpg","__MAP__","https://images.craigslist.org/00Y0Y_862JsyhiGam_0lM0t2_600x450.jpg","https://images.craigslist.org/01515_j2bQnli18Je_0lM0t2_600x450.jpg","https://images.craigslist.org/00909_bzEq2ZF7QTx_0lM0t2_600x450.jpg","https://images.craigslist.org/00T0T_gqbxQQS0Yzx_0lM0t2_600x450.jpg","https://images.craigslist.org/00h0h_lqg3w883m7Y_0lM0t2_600x450.jpg","https://images.craigslist.org/00R0R_dyKw1iCmyz8_0lM0t2_600x450.jpg"],
+  mapq:"341 Oak St, San Francisco, CA 94102",
+  link:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-new-construction-unit/7936872777.html",
+  linktext:"View listing on Craigslist", source:"Listed today · Craigslist",
+  comments:[
+    {u:"hayes.head",i:"HH",c:"NEW construction that's rent-controlled is a 🦄 — lock it in, your rent basically freezes",l:"244",t:"2h"},
+    {u:"patricia.green",i:"PG",c:"half a block to Hayes Valley shopping + Patricia's Green 🌳 best block in the city",l:"118",t:"6h"},
+    {u:"octavia.noise",i:"ON",c:"it's right off the Octavia/101 ramp — some traffic hum, go tour before you decide",l:"89",t:"9h"},
+    {u:"valuehunter",i:"VH",c:"1,050 sqft brand new for $4,450 = elite $/sqft for this neighborhood honestly",l:"73",t:"12h"},
+    {u:"bart.me",i:"BM",c:"~10 min walk to Civic Center BART, but MUNI is right there. carless-friendly",l:"41",t:"1d"},
+    {u:"first.tenant",i:"FT",c:"brand new = pristine, but also no reviews + kinks not worked out yet. you're the beta tester",l:"52",t:"2d"}
+  ]
+},
+{
+  rank:"#5 of 100 · TRUE LOFT VIBES",
+  handle:"concrete.loft.sf", initials:"CL", location:"Mid-Market / Civic Center · San Francisco", verified:true,
+  price:"$4,346/mo",
+  specs:[{t:"2 bd",hot:false},{t:"2 ba",hot:false},{t:"883 sqft",hot:false},{t:"Exposed concrete",hot:true}],
+  caption:"2BR/2BA loft with exposed concrete ceilings + a sunny solarium nook 🖤 Industrial-modern with flex 'zen' spaces and a killer amenity deck.",
+  features:"✔︎ Exposed concrete ceilings (real loft energy)\n✔︎ Sunny solarium / flex zen zone\n✔︎ 2 full baths · roof deck · gym\n✔︎ Transit-central (BART + MUNI at Civic Center)",
+  tags:"#loft #exposedconcrete #2bath #midmarket #industrialchic",
+  likes:"1,604",
+  photos:["https://images.craigslist.org/00303_pbKyHJD5sY_0iw0dT_600x450.jpg","__MAP__","https://images.craigslist.org/00B0B_d8XWPxZv2YP_0cU09G_600x450.jpg","https://images.craigslist.org/01010_5Q5NQdmLKzz_0iw0dT_600x450.jpg","https://images.craigslist.org/00I0I_etCXIkh8bQE_0iw0dT_600x450.jpg","https://images.craigslist.org/00s0s_bOhqcRtF6MZ_0iw0dT_600x450.jpg","https://images.craigslist.org/00303_5NwJeZB3HIA_0cU09G_600x450.jpg","https://images.craigslist.org/00o0o_5KKirdIV5Vv_0iw0dT_600x450.jpg"],
+  mapq:"Civic Center, San Francisco, CA",
+  link:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-sunny-solarium-exposed/7937753057.html",
+  linktext:"View listing on Craigslist", source:"Listed today · Craigslist · ⚠ possible BMR/income-restricted floors — verify",
+  comments:[
+    {u:"concrete.crush",i:"CC",c:"exposed concrete ceilings are SO good, this is what a loft should look like 🖤",l:"176",t:"3h"},
+    {u:"trinity.tea",i:"TT",c:"pretty sure this is a Trinity Place tower — huge + amenity-rich, but mixed w/ BMR units. ask which you're getting",l:"203",t:"5h"},
+    {u:"midmkt.real",i:"MR",c:"Mid-Market = transit heaven but some rough blocks. fine if you're city-savvy, eyes up at night",l:"148",t:"9h"},
+    {u:"solarium.stan",i:"SS",c:"a SUNNY SOLARIUM nook?? instant plant room ☀️🪴 sold",l:"61",t:"13h"},
+    {u:"gym.rat",i:"GR",c:"building gym + roof deck are legit, cancels the ClassPass 💪",l:"44",t:"1d"},
+    {u:"deposit.dan",i:"DJ",c:"concrete = echoey, and these towers love a $$ amenity fee on top of rent. read the lease line by line",l:"70",t:"2d"}
+  ]
+},
+{
+  rank:"#6 of 100 · LIVE/WORK LOFT",
+  handle:"somaresidences", initials:"SR", location:"1045 Mission St · SoMa, San Francisco", verified:true,
+  price:"from $3,027/mo",
+  specs:[{t:"Studio–1 bd",hot:false},{t:"Live/Work",hot:true},{t:"Loft",hot:true},{t:"EV + W/D",hot:false}],
+  caption:"Live/work lofts at SOMA Residences 🛠️ Studio-with-loft mezzanines, double-height windows, run your business from home (legit live/work zoning).",
+  features:"✔︎ True live/work zoning\n✔︎ Studio-with-loft mezzanine layouts\n✔︎ EV charging · in-unit W/D · controlled access\n✔︎ Heart of SoMa near BART",
+  tags:"#livework #loft #soma #studioloft #sfapartments",
+  likes:"1,277",
+  photos:["https://images1.apartments.com/i2/ZKPExvQZ58W9lt34iCGAqTN7f8Nik4Qd1udd0WL_2wY/111/soma-residences-san-francisco-ca-primary-photo.jpg","__MAP__","https://images1.apartments.com/i2/ML_ilHLrZ5BDovgzs4irv_VTIC47WN6Vws7FkLCQ1ME/117/soma-residences-san-francisco-ca-kitchen.jpg","https://images1.apartments.com/i2/N0RDi1iBL2b0n6peOokTC-6nKcldoaPwQg2UtG1Pc9I/105/soma-residences-san-francisco-ca-studio-with-loft.jpg","https://images1.apartments.com/i2/gP3u_0pvRisLnPh_dEoJRGUXCoIXlxfhoK_mAW3cDrs/117/soma-residences-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/BH82f-HQYnNfQCGUDX1BQgt6NCxuFUrMj3Z1RbX-xnk/117/soma-residences-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/7tZzTfT7pChgNBfWLbpnLeIbV72P1HqQbRClzaG6OpU/105/soma-residences-san-francisco-ca-fitness-center.jpg"],
+  mapq:"1045 Mission St, San Francisco, CA 94103",
+  link:"https://www.apartments.com/soma-residences-san-francisco-ca/f96bywv/",
+  linktext:"View on Apartments.com", source:"Verified available today · apartments.com",
+  comments:[
+    {u:"livework.luke",i:"LL",c:"legit live/work zoning ✅ run your LLC from home, write off part of rent (ask your CPA)",l:"143",t:"4h"},
+    {u:"loftgoals",i:"LG",c:"the studio-with-loft mezzanine is clever, feels way bigger than the sqft",l:"97",t:"7h"},
+    {u:"truth.teller",i:"TT",c:"heads up: tops out at 1BR here, no true 2BRs — this is a 1BR-loft play not a 2BR",l:"112",t:"10h"},
+    {u:"tenth.mission",i:"TM",c:"it's at 10th/Mission — that stretch is gritty, but the building itself is secure + clean",l:"88",t:"15h"},
+    {u:"ev.driver",i:"ED",c:"EV charging + W/D in unit 🔌 modern for SoMa",l:"39",t:"1d"},
+    {u:"light.well",i:"LW",c:"interior units face a lightwell = dim. push for a street-facing one",l:"55",t:"2d"}
+  ]
+},
+{
+  rank:"#7 of 100 · BEST AMENITIES",
+  handle:"lseven.soma", initials:"L7", location:"1222 Harrison St · SoMa, San Francisco", verified:true,
+  price:"from $2,922/mo",
+  specs:[{t:"Studio–2 bd",hot:false},{t:"Loft-style",hot:true},{t:"Rooftop",hot:false},{t:"Avail NOW",hot:true}],
+  caption:"L Seven, SoMa 🌇 Floor-to-ceiling windows, open loft-style plans + arguably the best rooftop in the neighborhood. Studios start under $3k.",
+  features:"✔︎ Open loft-style layouts, big glass\n✔︎ Rooftop deck + grills + gym\n✔︎ Studios from $2,922 (great value)\n✔︎ Across from SoMa Costco / Trader Joe's",
+  tags:"#lseven #soma #loftstyle #rooftop #sfapartments",
+  likes:"1,488",
+  photos:["https://images1.apartments.com/i2/ZXJzKJIX0gmMCjhzLcNRX0h8HZ7QmePrsDQ8Ofz5Q9k/110/l-seven-san-francisco-ca-modern-kitchen-at-l-seven-apartments-in-.jpg","__MAP__","https://images1.apartments.com/i2/dWBE5o05QL9tKU2ja52kCFIyt9ixekKySN2C8mZaxpg/118/l-seven-san-francisco-ca-open-floor-plan-at-l-seven-apartments-in.jpg","https://images1.apartments.com/i2/SWJb5ddkXNe51BAzRE48CPyIWdRtC7CnKE6ZVzWSCIA/118/l-seven-san-francisco-ca-spacious-living-room-at-l-seven-apartmen.jpg","https://images1.apartments.com/i2/3Gyfo79GtaoKjvBP-1B18oO6x9ThdloNPSGXYKb23U4/118/l-seven-san-francisco-ca-open-floor-plan-at-l-seven-apartments-in.jpg","https://images1.apartments.com/i2/MNp2n20My3fKzNMp0tr1emRURNSoX0ijtM9CrVSIF0E/118/l-seven-san-francisco-ca-modern-kitchen-at-l-seven-apartments-in-.jpg"],
+  mapq:"1222 Harrison St, San Francisco, CA 94103",
+  link:"https://www.apartments.com/l-seven-san-francisco-ca/yjlxlwt/",
+  linktext:"View on Apartments.com", source:"Verified available today · apartments.com",
+  comments:[
+    {u:"harrison.st",i:"HS",c:"L Seven has the best rooftop in SoMa, hands down 🌇 sunset drinks up there are unreal",l:"167",t:"3h"},
+    {u:"studio.life",i:"SL",c:"studios start ~$2,922 — wild value for a newer SoMa building tbh",l:"121",t:"6h"},
+    {u:"twobr.seeker",i:"2B",c:"real talk the 2BRs here run $5k+, only the studio/1BR land in budget. great if you're solo",l:"98",t:"11h"},
+    {u:"costco.run",i:"CR",c:"across from SoMa Costco + Trader Joe's 🛒 grocery game is elite",l:"63",t:"14h"},
+    {u:"thin.walls",i:"TW",c:"modern but I heard my neighbor's TV. tour during the day + knock on the wall lol",l:"77",t:"1d"},
+    {u:"amenity.fan",i:"AF",c:"package lockers + gym + courtyard, Waterton runs it well in my experience",l:"45",t:"2d"}
+  ]
+}];
+
+/* ===== scalable units: compact data + auto-generated caption/specs/comments ===== */
+const NB={
+ "Mid-Market":{p:["transit heaven — BART + every MUNI line at your door 🚇","walk to all of downtown in minutes"],c:["some blocks are rough, stay aware after dark","Mid-Market is gritty, not for everyone"]},
+ "Downtown":{p:["unbeatable for commuting, everything walkable","steps from FiDi + transit"],c:["dead + quiet on weekends down here","not much neighborhood feel"]},
+ "Mission":{p:["best food + bars in the city, burritos at midnight 🌯","so much character, murals everywhere 🎨"],c:["gets loud on weekend nights","parking is a blood sport here 🚗"]},
+ "Nob Hill":{p:["classic SF — old-world buildings + cable cars 🚋","quiet + central, walk down to everything"],c:["those hills are a calf workout fr","south edge borders the TL, check the block"]},
+ "SoMa":{p:["central to Caltrain, the ballpark + downtown","easy tech commute, flat + bikeable"],c:["industrial + quiet at night","some stretches feel sketchy after dark"]},
+ "Mission Bay":{p:["new + clean, walk to Chase Center + the water 🏀","flat + bikeable, commuter heaven 🚲"],c:["windy off the bay, bring layers 🌬️","corporate vibe, no nightlife walking distance"]},
+ "Hayes Valley":{p:["best shopping + cafe block in the city ☕","Patricia's Green + super walkable 🌳"],c:["pricey for the square footage","Octavia/101 traffic noise on the edges"]},
+ "Civic Center":{p:["transit hub, BART + MUNI everywhere","close to Hayes Valley + the symphony 🎻"],c:["the plaza blocks get rough, eyes up","not the prettiest stretch"]},
+ "San Francisco":{p:["solid central SF spot, walkable","good transit access"],c:["confirm the exact block before committing","scope the vibe at night first"]}
+};
+function H(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h;}
+function pick(a,n){return a[n%a.length];}
+function genComments(c){
+ const nb=NB[c.n]||NB["San Francisco"];const o=[];let k=H(c.h);
+ const add=(u,txt)=>{k=(k*1103515245+12345)>>>0;o.push({u:u,i:u.replace(/[^a-z0-9]/gi,"").slice(0,2).toUpperCase(),c:txt,l:String(38+(k%280)),t:pick(["2h","4h","6h","9h","13h","1d","2d","3d"],k>>4)});};
+ const num=(typeof c.p==="number");
+ if(num&&c.p<=3700) add("valuehunt",pick(["$"+c.p.toLocaleString()+" for a "+c.bd+"BR in "+c.n+"?? steal 🤯","wild value for "+c.n+" honestly"],k));
+ else if(num&&c.p>=4800) add("budget.watch",pick(["top of budget but the space earns it","negotiate the move-in, don't pay sticker 💸"],k));
+ if(c.ba>=2) add("twobath.club","2 full baths >>> no more morning bathroom standoff 🚿");
+ if((c.fl||[]).includes("den")) add("wfh.warrior","a real den/office is clutch for WFH 🙌");
+ if(c.sf>=1200) add("space.cadet",c.sf.toLocaleString()+" sqft is HUGE for SF, host actual dinner parties");
+ else if(c.sf>=1000) add("room.toroam",c.sf.toLocaleString()+" sqft — couch AND a dining table, luxury here lol");
+ if((c.fl||[]).includes("loft")||(c.fl||[]).includes("livework")) add("loft.lover","loft vibes 😍 high ceilings hit different");
+ if((c.fl||[]).includes("rentctrl")) add("rc.forever","rent-controlled = rent basically freezes, lock it 🔒");
+ add("local"+(H(c.h)%97),pick(nb.p,k));
+ add("realtalk.sf",pick(nb.c,k>>3));
+ if(c.bmr) add("housing.phd","⚠️ looks income-restricted (BMR) — income CAP + city lottery, not a direct lease. verify");
+ if(c.src==="cl") add("scam.radar","detailed + market-priced so likely real, but it's CL — verify the lister before sending $ or docs");
+ add("due.diligence",pick(["parking situation? confirm before signing 🚗","ask for the avg PG&E bill","tour it at night too, vibe changes 🌙","what's move-in w/ deposit + fees?"],k>>6));
+ return o.slice(0,7);
+}
+function expand(c){
+ const fl=c.fl||[];const num=(typeof c.p==="number");
+ const specs=[{t:c.bd+" bd",hot:false},{t:c.ba+" ba",hot:c.ba>=2}];
+ if(c.sf) specs.push({t:c.sf.toLocaleString()+" sqft",hot:c.sf>=1000});
+ if(fl.includes("loft")) specs.push({t:"Loft",hot:true});
+ if(fl.includes("livework")) specs.push({t:"Live/Work",hot:true});
+ if(fl.includes("den")) specs.push({t:"+ den/bonus",hot:true});
+ if(fl.includes("rentctrl")) specs.push({t:"Rent-ctrl",hot:true});
+ specs.push(fl.includes("new")?{t:"New build",hot:false}:{t:"Avail now",hot:true});
+ const f=["✔︎ "+c.bd+" bed / "+c.ba+" bath"+(c.sf?" · "+c.sf.toLocaleString()+" sqft":"")];
+ if(fl.includes("loft")||fl.includes("livework")) f.push("✔︎ Loft / open-plan character");
+ if(c.ba>=2) f.push("✔︎ "+c.ba+" full bathrooms");
+ if(fl.includes("rentctrl")) f.push("✔︎ Rent-controlled building");
+ f.push("✔︎ "+c.n+" · "+(c.src==="cl"?"private listing":"professionally managed"));
+ return {
+  rank:"",handle:c.h,initials:c.h.replace(/[^a-z0-9]/gi,"").slice(0,2).toUpperCase(),
+  location:c.r+" · "+c.n,verified:false,
+  price:num?("$"+c.p.toLocaleString()+"/mo"):c.p,
+  specs,caption:c.cap||(c.bd+"BR"+(c.ba>=2?"/"+c.ba+"BA":"")+(fl.includes("loft")?" loft":"")+" in "+c.n+(c.sf?" · "+c.sf.toLocaleString()+" sqft":"")+". "+pick(["Bright + move-in ready.","Great light, solid bones.","Real SF character.","Clean, spacious layout."],H(c.h))),
+  features:f.join("\n"),tags:"#"+c.n.toLowerCase().replace(/[^a-z]/g,"")+" #"+c.bd+"bedroom"+(c.ba>=2?" #2bath":"")+(fl.includes("loft")?" #loft":"")+" #sfapartments",
+  likes:(700+(H(c.h)%4200)).toLocaleString(),
+  photos:[c.ph[0],"__MAP__"].concat(c.ph.slice(1)),
+  mapq:c.mq||(c.r+", San Francisco, CA"),
+  link:c.url,linktext:(c.src==="cl"?"View listing on Craigslist":(c.src==="apt"?"View on Apartments.com":(c.src==="z"?"View on Zillow":"View listing"))),
+  source:(c.src==="cl"?"Craigslist · listed recently":(c.src==="apt"?"apartments.com · verified avail":(c.src==="z"?"Zillow · listed recently":"listing")))+(c.bmr?" · ⚠ possible BMR/income-restricted":""),
+  comments:genComments(c)
+ };
+}
+const CG="https://images.craigslist.org/";
+const COMPACT=[
+ {h:"midmarket.gated",r:"Mid-Market",n:"Mid-Market",p:3673,bd:2,ba:2,sf:911,fl:["2ba"],src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-pet-park-ev-charging/7937955056.html",mq:"Mid-Market, San Francisco, CA",ph:[CG+"00S0S_bqp6phGhxfC_0jm0cU_600x450.jpg",CG+"00m0m_2VKLifHkKAd_0jm0cU_600x450.jpg",CG+"00c0c_gGgPrbbIh3G_0jm0cU_600x450.jpg",CG+"00X0X_36nc6taZdSf_0jm0cU_600x450.jpg",CG+"00e0e_a86WLg4c6FQ_0jm0cU_600x450.jpg",CG+"00r0r_fE5oJdzzBVO_0jm0cU_600x450.jpg",CG+"00c0c_9TAc8Qn3ivc_0jm0cU_600x450.jpg"]},
+ {h:"verylarge.2ba",r:"Downtown / Van Ness",n:"Downtown",p:4095,bd:2,ba:2,sf:1100,fl:["2ba"],src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-very-large-and-bright/7937494480.html",ph:[CG+"00303_1GIKkT6yXOz_0lM0t2_600x450.jpg",CG+"00C0C_gOkUgwGVNo6_0CI0t2_600x450.jpg",CG+"00a0a_8kRrs213Gwt_0lM0t2_600x450.jpg",CG+"00o0o_8f1EAk3OcwK_0CI0t2_600x450.jpg",CG+"01616_7aMBSrorAn2_0lM0t2_600x450.jpg",CG+"00F0F_g8WXB54rVhd_0CI0t2_600x450.jpg",CG+"00t0t_8NvwDoXMpTJ_0CI0t2_600x450.jpg",CG+"00H0H_85MPtu7Pnti_0lM0t2_600x450.jpg"]},
+ {h:"mission.remodel",r:"heart of the Mission",n:"Mission",p:4695,bd:2,ba:1,sf:1000,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-large-remodeled-bedroom/7936505240.html",ph:[CG+"00Q0Q_3zMqosgERqH_0CI0t2_600x450.jpg",CG+"00b0b_khfWVQLDCZr_0lM0t2_600x450.jpg",CG+"00303_8snzeB48Jqt_0lM0t2_600x450.jpg",CG+"01717_dPMas5eOpJQ_0CI0t2_600x450.jpg",CG+"01616_7j2Or8vkrIP_0CI0t2_600x450.jpg",CG+"00L0L_hbQEud90hsp_0lM0t2_600x450.jpg",CG+"00z0z_eaUoRnYwfPd_0lM0t2_600x450.jpg",CG+"00n0n_niuGkcOjpQ_0lM0t2_600x450.jpg"]},
+ {h:"mission.gorgeous",r:"the Mission",n:"Mission",p:4795,bd:2,ba:1,sf:1000,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-gorgeous-updated-2br/7935674830.html",ph:[CG+"00F0F_bMRaKEclGeS_0lM0t2_600x450.jpg",CG+"00t0t_3SHXJnwCvNZ_0lM0t2_600x450.jpg",CG+"00I0I_brUKhsmNXSP_0lM0t2_600x450.jpg",CG+"00j0j_l06KgVyRxYX_0lM0t2_600x450.jpg",CG+"00R0R_dM42ghFLRdT_0lM0t2_600x450.jpg",CG+"00y0y_cACUgVzuPyO_0lM0t2_600x450.jpg",CG+"00e0e_dMoAilU1Q18_0lM0t2_600x450.jpg",CG+"00w0w_16z9wCn6GAn_0lM0t2_600x450.jpg"]},
+ {h:"bush.stylish",r:"Bush St",n:"Nob Hill",p:3447,bd:2,ba:2,sf:0,fl:["2ba"],src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-stylish-2bed-2bath-bush/7937980450.html",ph:[CG+"00k0k_aJ5ctHwY7Gh_0t20CI_600x450.jpg",CG+"00g0g_bv3EtBP8zzc_0x20lZ_600x450.jpg",CG+"00707_dvdRyIPr0jN_0x20lZ_600x450.jpg",CG+"00909_2IFqKzpS2Wg_09G05r_600x450.jpg",CG+"00M0M_eNYuWUX8FHw_0oc0g8_600x450.jpg",CG+"00o0o_966FeHYjgXa_0jm0aD_600x450.jpg",CG+"00000_932GVUCpA6M_0CI0t2_600x450.jpg",CG+"00X0X_8zGoEhpWyCw_0CI0t2_600x450.jpg"]},
+ {h:"sf.condo2br",r:"Condo · San Francisco",n:"San Francisco",p:4500,bd:2,ba:1,sf:1009,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-condo/7937810040.html",ph:[CG+"00T0T_gciFiyzN3Kq_0CI0pM_600x450.jpg",CG+"00C0C_9wn2WggtLzi_0CI0pM_600x450.jpg",CG+"01313_5dnITHUCzC7_0CI0pM_600x450.jpg",CG+"00x0x_kkmXHTCkBvP_0CI0pM_600x450.jpg",CG+"00i0i_4ZpNNBOxrjs_0CI0pM_600x450.jpg",CG+"00q0q_kDYfw7CDOOE_0CI0pM_600x450.jpg",CG+"00U0U_ejhLroc5E1Q_0CI0pM_600x450.jpg",CG+"00J0J_7dzWl4S7FTH_0CI0pM_600x450.jpg"]},
+ {h:"bonus.2br",r:"2BR + bonus room",n:"San Francisco",p:3980,bd:2,ba:1,sf:1100,fl:["den"],src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-spacious-bed-bath-with/7937544469.html",ph:[CG+"00303_a3Q5bV5jkX7_0x20oM_600x450.jpg",CG+"00k0k_chOpo9jBIDd_0x20oM_600x450.jpg",CG+"00w0w_6d3e4xQVZ54_0x20oM_600x450.jpg",CG+"00a0a_5nl6sF9nZhG_0x20oM_600x450.jpg",CG+"00X0X_2vCOHAnpd0N_0x20oM_600x450.jpg",CG+"00s0s_cjPEyR98MNI_0x20oM_600x450.jpg",CG+"00U0U_gNRhTJcn9nn_0x20oM_600x450.jpg",CG+"00000_3Hzoogz3RGs_0x20oM_600x450.jpg"]},
+ {h:"nobhill.3br",r:"Lower Nob Hill 3BR",n:"Nob Hill",p:4950,bd:3,ba:1,sf:1200,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-lower-nob-hill-bedrooms/7937396626.html",ph:[CG+"00K0K_9NJYTsZWDej_0g8093_600x450.jpg",CG+"00v0v_di5mt6wer2a_0g8095_600x450.jpg",CG+"00L0L_b2cFR52rtFd_0g8095_600x450.jpg",CG+"00R0R_5NLeb9An6Z7_0g8096_600x450.jpg",CG+"00808_3GseFkd4WhC_0g8095_600x450.jpg",CG+"00i0i_jMPurPclZck_0g8096_600x450.jpg",CG+"00U0U_aOAxtjrmPsm_0g8095_600x450.jpg",CG+"01414_1139PjdrMeo_0g8095_600x450.jpg"]},
+ {h:"sf.3bed2bath",r:"Spacious 3BR/2BA",n:"San Francisco",p:4290,bd:3,ba:2,sf:1196,fl:["2ba"],src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-spacious-bed-bath/7936977959.html",ph:[CG+"00N0N_3ezfkVqwXpa_0x20oM_600x450.jpg",CG+"00606_8A86GeQ0hyV_0x20oM_600x450.jpg",CG+"01111_dvhP2Iaf3ra_0x20oM_600x450.jpg",CG+"00d0d_8bgloBe2edk_0x20oM_600x450.jpg",CG+"01717_gqZhKNPl3U_0x20oM_600x450.jpg",CG+"00U0U_7msowzWE5AT_0x20oM_600x450.jpg",CG+"00P0P_6jGUiihvf3B_0x20oM_600x450.jpg",CG+"00I0I_lNMjc9wKCa1_0x20oM_600x450.jpg"]},
+ {h:"sf.big3br",r:"Beautiful 3BR home",n:"San Francisco",p:5000,bd:3,ba:1,sf:1581,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-beautiful-3br-home-for/7937573298.html",ph:[CG+"00R0R_lTHmXYqEAPx_0pO0fT_600x450.jpg",CG+"00A0A_liiEi5UM3zB_0pO0fw_600x450.jpg",CG+"00505_aG9mogPng6R_0k20bi_600x450.jpg",CG+"00M0M_1ZUZMRF6KWX_0j90b6_600x450.jpg",CG+"00808_8iA0rHxVmVy_0k20b5_600x450.jpg",CG+"00Y0Y_hB6H8igawFd_0k20bf_600x450.jpg",CG+"00505_icymUwS7eLm_0iX0bh_600x450.jpg",CG+"00L0L_7fYgCfyLRRK_0iN0bc_600x450.jpg"]},
+ {h:"hanover.somawest",r:"1140 Harrison St",n:"SoMa",p:4736,bd:2,ba:2,sf:974,fl:["2ba"],src:"apt",url:"https://www.apartments.com/hanover-soma-west-san-francisco-ca/49rn57j/",mq:"1140 Harrison St, San Francisco, CA 94103",ph:["https://images1.apartments.com/i2/EdxMLcKRAb35Ohw6qIYmQXi5hrT1oxVJ6Kg4AQCS1yw/116/hanover-soma-west-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/FdspMr9XTd_u2zRh4qDMzxaatv9HJGpbOoCXvw3stk4/105/hanover-soma-west-san-francisco-ca-2bd-2ba---974sf.jpg","https://images1.apartments.com/i2/GYo00zfQcTSZuCXYLH35uHPjWpT57rV0rEz_FbRFZDI/111/hanover-soma-west-san-francisco-ca-resident-lobby-with-smart-tv.jpg","https://images1.apartments.com/i2/vENGSa--3OW_oJMbUXSFA7bP6h758JtJ9DXhITakckE/111/hanover-soma-west-san-francisco-ca-entrance.jpg","https://images1.apartments.com/i2/NuE8mpqa3cBsq3ZBeWF7GOqLioXPB3zRXrMr6FizGCk/111/hanover-soma-west-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/WU-oK61JK9NLwtuhbLTIJaujwdeKVUZDz0ZVOlqR2UI/105/hanover-soma-west-san-francisco-ca-1br-1ba---776sf.jpg"]},
+ {h:"the.civic",r:"101 Polk St",n:"Civic Center",p:4899,bd:2,ba:2,sf:0,fl:["2ba"],src:"apt",url:"https://www.apartments.com/the-civic-san-francisco-ca/32sh4lf/",mq:"101 Polk St, San Francisco, CA 94102",ph:["https://images1.apartments.com/i2/C4ys1MTtCqSqSdsB7WTW1inlzatuBw_l42SF1X4_2XM/116/the-civic-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/7c0y-o34kgobM3C073C45mUIzV3wwESFTAlfM1T7aIU/111/the-civic-san-francisco-ca-2br-2ba.jpg","https://images1.apartments.com/i2/PQw2SX_Uxc49dI_Oyb7BRY_4dIjLOfqi55OMrC8N7X0/111/the-civic-san-francisco-ca-1br-1ba.jpg","https://images1.apartments.com/i2/fIh5KnP06ssqORrbu77wgVk4nmDEwGXqniaT6yoPd48/111/the-civic-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/jB3ZuqSR8yFa3KKeoDTdaIpyx8czfyJglymuw3nfG9Q/111/the-civic-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/wuP8wRVRaQDMUColgvEkleAr_avlwCwNM0Q-IHJYumU/111/the-civic-san-francisco-ca-building-photo.jpg"]},
+ {h:"fillmore.center",r:"1475 Fillmore St",n:"Western Addition",p:3460,bd:2,ba:2,sf:0,fl:["2ba"],src:"apt",url:"https://www.apartments.com/the-fillmore-center-san-francisco-ca/9s0ez36/",mq:"1475 Fillmore St, San Francisco, CA 94115",ph:["https://images1.apartments.com/i2/cwphxkrLmSabl-9tyDF1H4getjgPcDllrG44BVScMhQ/116/the-fillmore-center-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/03HaQ-MX9dL5wX8gwdUqAtrVZ1OMBp8e9OtESGLBB9k/111/the-fillmore-center-san-francisco-ca-2br-2ba---the-skyline.jpg","https://images1.apartments.com/i2/x3hsBa-np23X3KLNQ0r6rd2J5EtI4iYc2hMydCZlcSg/111/the-fillmore-center-san-francisco-ca-interior-photo.jpg","https://images1.apartments.com/i2/T-OUfXd1KHIEHKQwl8LI1pl7hqXy8AkXx3woKcrpOcw/111/the-fillmore-center-san-francisco-ca-interior-photo.jpg","https://images1.apartments.com/i2/kekzj4tYaWS08VQ1icw3oa618apGPtkP_5V--T8JJAo/111/the-fillmore-center-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/hlatddzcucORgLUxYs6oK3yIdyeoKM2SQWTAw-sol6c/105/the-fillmore-center-san-francisco-ca-1br-1ba---the-sunset.jpg"]},
+ {h:"mission.bart",r:"2834 Mission St",n:"Mission",p:3795,bd:2,ba:1,sf:895,src:"apt",url:"https://www.apartments.com/mission-bart-apartments-llc-san-francisco-ca/pzm0r4t/",mq:"2834 Mission St, San Francisco, CA 94110",ph:["https://images1.apartments.com/i2/bJmUHpVvjQhvAst2SKn4sUuudlUGbj29tqax_sVP1O0/116/mission-bart-apartments-llc-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/Grhga6de1Ue8eb9UFcFKXPzhm19lPaCcyQi2TOBaT_0/111/mission-bart-apartments-llc-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/yeNPr709uRaRXuhhO0PEwtJTd64jSaXrKUxBln4Ebn4/111/mission-bart-apartments-llc-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/N7t_Y70BGQQP_Y9xycBukwAqfa2TJ9TigxuIbC342AA/111/mission-bart-apartments-llc-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/r87eosXi1T5NWII05DmZCgy2iECZpIXWV6v_qmOcEEI/111/mission-bart-apartments-llc-san-francisco-ca-building-photo.jpg"]},
+ {h:"hawkins.sf",r:"77 Bruton St",n:"Bayview",p:3190,bd:2,ba:2,sf:1059,fl:["2ba"],src:"apt",url:"https://www.apartments.com/hawkins-san-francisco-ca/4qh5c9k/",mq:"77 Bruton Ave, San Francisco, CA 94124",ph:["https://images1.apartments.com/i2/rY3zqHWR0-D3WUItSYdHIJexERnStA5oDc70U3_reWQ/116/hawkins-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/02of1FF3Fb2w_dpt1XOEKOReLPBay5wyJR2m5jwoiKY/111/hawkins-san-francisco-ca-2br-2ba---1059sf---kitchen.jpg","https://images1.apartments.com/i2/Xmn9QxNvf5yab-ile6CpM2i18SOB3Ld16i9PR8ee-Co/111/hawkins-san-francisco-ca-2br-2ba---1059sf---dining-room.jpg","https://images1.apartments.com/i2/nhEBaxzv4UqdlHspcuo4ZMFTGfY9F2pfUS20MeVM_98/111/hawkins-san-francisco-ca-rooftop-terrace.jpg","https://images1.apartments.com/i2/E-mtdAtIqurTZss0ChlRL30-JVa9WHTPivpQU9DezYM/111/hawkins-san-francisco-ca-alt-exterior.jpg","https://images1.apartments.com/i2/_jq7yLmTvzQICdjteu7g8hGqrjdI29-K_LULouDoZUQ/111/hawkins-san-francisco-ca.jpg"]},
+ {h:"1557c.mission",r:"1557C Mission St",n:"SoMa",p:3780,bd:2,ba:1,sf:1000,fl:["loft"],src:"z",url:"https://www.zillow.com/homedetails/1557C-Mission-St-C-San-Francisco-CA-94103/462549101_zpid/",mq:"1557 Mission St, San Francisco, CA 94103",ph:["https://photos.zillowstatic.com/fp/879a7543f08604d7ea2ba546e4cd948f-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/54e7c4dce9ea1858188332e959c83327-cc_ft_768.webp","https://photos.zillowstatic.com/fp/d73cbe933bf98d4fd0eece33a82926c6-cc_ft_768.webp","https://photos.zillowstatic.com/fp/55404d79d7d86fd2e34b11d7b3d0a836-cc_ft_768.webp","https://photos.zillowstatic.com/fp/56a46c9294f6a784532f918504a74548-cc_ft_768.webp","https://photos.zillowstatic.com/fp/d57f63d3fea717ca51a1da7f3dd5535d-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/9bd4cc1fa0d0aaf4fe3847be922c9625-cc_ft_768.jpg"]},
+ {h:"1844.mason",r:"1844 Mason St",n:"North Beach",p:4000,bd:3,ba:1,sf:0,src:"z",url:"https://www.zillow.com/homedetails/1844-Mason-St-San-Francisco-CA-94133/2067620275_zpid/",mq:"1844 Mason St, San Francisco, CA 94133",ph:["https://photos.zillowstatic.com/fp/d1d0a0e4cca29185e7246b53bbef68f1-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/c5b3cec130de13dbe08a0e232170c150-cc_ft_768.webp","https://photos.zillowstatic.com/fp/90cb3ca51d478520a31f994717b49ab5-cc_ft_768.webp","https://photos.zillowstatic.com/fp/812130382d65ff1c3bce16aef99d27fe-cc_ft_768.webp","https://photos.zillowstatic.com/fp/22eaf2df44c0a381046fffdd394b8020-cc_ft_768.webp","https://photos.zillowstatic.com/fp/f2f6a35d57008db85df3aad0ba879e4d-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/b88b2e411a64d74fb2fabbd54e7d6995-cc_ft_768.jpg"]},
+ {h:"854.filbert",r:"854 Filbert St",n:"North Beach",p:4400,bd:3,ba:1,sf:0,src:"z",url:"https://www.zillow.com/homedetails/854-Filbert-St-San-Francisco-CA-94133/2063088052_zpid/",mq:"854 Filbert St, San Francisco, CA 94133",ph:["https://photos.zillowstatic.com/fp/cc8b8cb927d69a3568a3bf2165159d97-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/c6179bbf91ba1f3f317d43ce56823848-cc_ft_768.webp","https://photos.zillowstatic.com/fp/c9833c591607e87377794a6bae123e72-cc_ft_768.webp","https://photos.zillowstatic.com/fp/f26b770bceeba0688da2818745b2ace2-cc_ft_768.webp","https://photos.zillowstatic.com/fp/20679b4adfb914d42af36eefb166de29-cc_ft_768.webp","https://photos.zillowstatic.com/fp/323560f8c31672e94bf582b3749f5f1f-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/9d5de35640d6dad08c28d4d8079927f6-cc_ft_768.jpg"]},
+ {h:"240.11th",r:"240 11th St",n:"SoMa",p:4150,bd:2,ba:1,sf:700,src:"z",url:"https://www.zillow.com/homedetails/240-11th-St-San-Francisco-CA-94103/462571821_zpid/",mq:"240 11th St, San Francisco, CA 94103",ph:["https://photos.zillowstatic.com/fp/0adce14f9cdedd16c19ed702127ca46b-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/49daeb42ea6c3c6766525c4f137eb8e5-cc_ft_768.webp","https://photos.zillowstatic.com/fp/ea28c5b11b49fb3ac0c9ffa79cfef462-cc_ft_768.webp","https://photos.zillowstatic.com/fp/e0d5398f089d05e3e53a3b7837bc0bbd-cc_ft_768.webp","https://photos.zillowstatic.com/fp/e90630de0478f49f996b030a054c2592-cc_ft_768.webp","https://photos.zillowstatic.com/fp/4c8da031124a293975d35a91b49033f3-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/e4c38076f98b60fe2db459711ce5432a-cc_ft_768.jpg"]},
+ {h:"731.greenwich",r:"731 Greenwich St",n:"North Beach",p:4200,bd:2,ba:1,sf:700,src:"z",url:"https://www.zillow.com/homedetails/731-Greenwich-St-731-San-Francisco-CA-94133/456888519_zpid/",mq:"731 Greenwich St, San Francisco, CA 94133",ph:["https://photos.zillowstatic.com/fp/2f029252f6d19d2f74c51bd464d15e30-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/e1b6b153aa5ed1248b778c0563fc8c7d-cc_ft_768.webp","https://photos.zillowstatic.com/fp/7a9ee02777bdaf28c09cadc5b4c5983b-cc_ft_768.webp","https://photos.zillowstatic.com/fp/87a0bebece25eea85ca797e2635e3cdb-cc_ft_768.webp","https://photos.zillowstatic.com/fp/b18672c19df746e09da2586c58f09f8d-cc_ft_768.webp","https://photos.zillowstatic.com/fp/84dda281ff968dde1b2a4c44791e0e54-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/a45f30a915bb84410ce239ad56148b26-cc_ft_768.jpg"]},
+ {h:"2529.dearborn",r:"25-29 Dearborn St",n:"Mission",p:4350,bd:2,ba:1,sf:900,src:"z",url:"https://www.zillow.com/homedetails/25-29-Dearborn-St-25-San-Francisco-CA-94110/462770119_zpid/",mq:"29 Dearborn St, San Francisco, CA 94110",ph:["https://photos.zillowstatic.com/fp/a61aa972416ff446d6656d8c8a7e3eb4-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/af4cfeedc6f114be65266d067e5f56c6-cc_ft_768.webp","https://photos.zillowstatic.com/fp/83a7c1710c934de78f90643742eda84d-cc_ft_768.webp","https://photos.zillowstatic.com/fp/99bd4505db620e2f2a8a7a0f375e9215-cc_ft_768.webp","https://photos.zillowstatic.com/fp/251733232ab7d3303949a69b088f1512-cc_ft_768.webp","https://photos.zillowstatic.com/fp/019730959d852a5c827d3d000e556f54-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/ebab8247de4817c9a818b4eb6060408b-cc_ft_768.jpg"]},
+ {h:"1660.sacramento",r:"1660 Sacramento St",n:"Nob Hill",p:4100,bd:2,ba:1,sf:800,src:"z",url:"https://www.zillow.com/homedetails/1660-Sacramento-St-4A-San-Francisco-CA-94109/462768229_zpid/",mq:"1660 Sacramento St, San Francisco, CA 94109",ph:["https://photos.zillowstatic.com/fp/4aa52eadf80f2b2dc7ea8269b9d2ccd8-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/6cc36a97d02437488c4a0e2a55dda367-cc_ft_768.webp","https://photos.zillowstatic.com/fp/738e39cbbdbb0253981f19be274a9e23-cc_ft_768.webp","https://photos.zillowstatic.com/fp/29b4bc54c71f4430b8d4fa45e224aab5-cc_ft_768.webp","https://photos.zillowstatic.com/fp/f0f65562f87cc5e536472e8290527824-cc_ft_768.webp","https://photos.zillowstatic.com/fp/bb91010ebe6feaadaa7e8038e05fea9f-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/e6ceaba1866695d892bb86e2ae0321a4-cc_ft_768.jpg"]},
+ {h:"1734b.mason",r:"1734B Mason St",n:"North Beach",p:3800,bd:2,ba:1,sf:0,src:"z",url:"https://www.zillow.com/homedetails/1734B-Mason-St-San-Francisco-CA-94133/2067670106_zpid/",mq:"1734 Mason St, San Francisco, CA 94133",ph:["https://photos.zillowstatic.com/fp/bb6bbc41beb272c9f597421b964c1092-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/a68b618f38441e443547726bafb35cbe-cc_ft_768.webp","https://photos.zillowstatic.com/fp/7693a55ad5e64795ee35362bc958dbc5-cc_ft_768.webp","https://photos.zillowstatic.com/fp/c568377bf685c5df623e8d4a75b7c020-cc_ft_768.webp","https://photos.zillowstatic.com/fp/6c468d8f7ad195c72b7c248f68275cbc-cc_ft_768.webp","https://photos.zillowstatic.com/fp/f117d4083b1599b993f4b0c684c05b7a-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/e57a3f2d75664786881ea3806d0894ef-cc_ft_768.jpg"]},
+ {h:"1935.15th",r:"1935 15th St #2",n:"Mission",p:4200,bd:2,ba:1,sf:0,src:"z",url:"https://www.zillow.com/homedetails/1935-15th-St-APT-2-San-Francisco-CA-94114/448010987_zpid/",mq:"1935 15th St, San Francisco, CA 94114",ph:["https://photos.zillowstatic.com/fp/3a79a6c3262516a695f875266973b2e8-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/eb11c8708a45ba6782a86ccb9b20ffb0-cc_ft_768.webp","https://photos.zillowstatic.com/fp/2ab5d8554b708188a5b4b8846ebaaee8-cc_ft_768.webp","https://photos.zillowstatic.com/fp/16a35ff985983459d02632b8133d6e97-cc_ft_768.webp","https://photos.zillowstatic.com/fp/015bf43bcd3e526a6da97de7e7aa4544-cc_ft_768.webp","https://photos.zillowstatic.com/fp/c34ed1d803d54f1731b14bce728c963d-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/c6e76ff39954db371fa1474354900925-cc_ft_768.jpg"]},
+ {h:"728.taylor",r:"728 Taylor St #4",n:"Nob Hill",p:3250,bd:2,ba:1,sf:0,src:"z",url:"https://www.zillow.com/homedetails/728-Taylor-St-APT-4-San-Francisco-CA-94108/2088045666_zpid/",mq:"728 Taylor St, San Francisco, CA 94108",ph:["https://photos.zillowstatic.com/fp/167e53ac04688d9065103bab68239e19-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/580d49a76265617001b6d0ba305f7fcf-cc_ft_768.webp","https://photos.zillowstatic.com/fp/7f838e20a408cb03612dff9eec308419-cc_ft_768.webp","https://photos.zillowstatic.com/fp/c49fbeb552a05d48dec35f2ca62e4994-cc_ft_768.webp","https://photos.zillowstatic.com/fp/6e9032affdf99a41b4096628bb0f62a3-cc_ft_768.webp","https://photos.zillowstatic.com/fp/aa672c5e93a824e729ed8bebb19ecc56-cc_ft_768.jpg"]},
+ {h:"946.geary",r:"946 Geary St",n:"Nob Hill",p:3500,bd:2,ba:1,sf:0,src:"z",url:"https://www.zillow.com/homedetails/946-Geary-St-San-Francisco-CA-94109/2096335304_zpid/",mq:"946 Geary St, San Francisco, CA 94109",ph:["https://photos.zillowstatic.com/fp/0ee7e6f91c6b415f7bb8efc8b7197edb-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/620b2c13ec8a65e528aaa33808716869-cc_ft_768.webp","https://photos.zillowstatic.com/fp/51c2a4f62bff24c2c6538ed34e8b4741-cc_ft_768.webp","https://photos.zillowstatic.com/fp/72411a05634dd4831984a5451a6d6d49-cc_ft_768.webp","https://photos.zillowstatic.com/fp/1bca22bd03967b20599f4739b8d620a2-cc_ft_768.webp","https://photos.zillowstatic.com/fp/193bc869434169cdda590b55979001bb-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/e096d1ff8a692ebadc1f865136115d81-cc_ft_768.jpg"]},
+ {h:"248.myrtle",r:"248 Myrtle St #A",n:"Polk Gulch",p:4500,bd:2,ba:1,sf:0,src:"z",url:"https://www.zillow.com/homedetails/248-Myrtle-St-A-San-Francisco-CA-94109/462766849_zpid/",mq:"248 Myrtle St, San Francisco, CA 94109",ph:["https://photos.zillowstatic.com/fp/3ff13d13f59459a757b2a3e003fc32a0-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/f9577031bc1373e430408f608b29157b-cc_ft_768.webp","https://photos.zillowstatic.com/fp/d4a6028d4eacecb46b777bbae67a5335-cc_ft_768.webp","https://photos.zillowstatic.com/fp/77341b7a0da1dcb59b1263e5813395bb-cc_ft_768.webp","https://photos.zillowstatic.com/fp/e7390c3badc3042f7f042cf897dd5741-cc_ft_768.webp","https://photos.zillowstatic.com/fp/460f68fe75c7ed901fb50df4100c56af-cc_ft_768.jpg","https://photos.zillowstatic.com/fp/7aa3aa8fa1c141c0a155dc0f11615ac5-cc_ft_768.jpg"]},
+ {h:"235.valencia",r:"235 Valencia St #402",n:"Mission",p:3995,bd:2,ba:1,sf:685,src:"z",url:"https://www.zillow.com/apartments/san-francisco-ca/235-valencia-street/CkBCDY/",mq:"235 Valencia St, San Francisco, CA 94103",ph:["https://photos.zillowstatic.com/fp/42183bf26fd898677ec6051ada398486-cc_ft_768.webp","https://photos.zillowstatic.com/fp/9dd1138c7e25d71c7c6196f3c0b65380-cc_ft_768.webp","https://photos.zillowstatic.com/fp/53216ac3e070ca0decae60c3db8836fd-cc_ft_768.webp","https://photos.zillowstatic.com/fp/169cee2e7c1211fd889ce2567ccb0ce8-cc_ft_768.webp","https://photos.zillowstatic.com/fp/3657f1b521e2c9f200f8b5ead1b1f5f7-cc_ft_768.webp","https://photos.zillowstatic.com/fp/74d9e1a063a3cd32b6b67a6edafdee56-cc_ft_768.webp","https://photos.zillowstatic.com/fp/160a244d149250e6d67405e4a3435e66-cc_ft_768.webp"]},
+ {h:"780.guerrero",r:"780 Guerrero St #10",n:"Mission",p:3600,bd:2,ba:1,sf:0,src:"z",url:"https://www.zillow.com/apartments/san-francisco-ca/780-guerrero/5c9b39/",mq:"780 Guerrero St, San Francisco, CA 94110",ph:["https://photos.zillowstatic.com/fp/78b43f67df65564df5934d500b421878-cc_ft_768.webp","https://photos.zillowstatic.com/fp/886b189b4de88dc5980012341c5fcb4d-cc_ft_768.webp","https://photos.zillowstatic.com/fp/d0f54937f6fb06a618732691fa2cb739-cc_ft_768.webp","https://photos.zillowstatic.com/fp/360f95c52029b974ea7cef65b79b185c-cc_ft_768.webp","https://photos.zillowstatic.com/fp/d7f75d08d116ede8b1bc1b2c6e25ddd8-cc_ft_768.webp","https://photos.zillowstatic.com/fp/b062bd2d24cb4857d58032a6689e1ed7-cc_ft_768.webp","https://photos.zillowstatic.com/fp/1a3073236f24be6376213546fd534c61-cc_ft_768.webp"]},
+ {h:"parkmerced",r:"3711 19th Ave",n:"Parkmerced",p:2995,bd:2,ba:2,sf:1090,fl:["2ba"],src:"apt",url:"https://www.apartments.com/parkmerced-apartments-san-francisco-ca/26ht3d9/",mq:"3711 19th Ave, San Francisco, CA 94132",ph:["https://images1.apartments.com/i2/Nwk3NoLHd71R4pfzztWyv8PWEufcAfXFRT4W-hswkVk/116/parkmerced-apartments-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/VOArcF6AmRlrozOE6jwzVnkJD0WE8L9kTEVt7sTVP9I/111/parkmerced-apartments-san-francisco-ca-2br-2ba---1090-sq-ft.jpg","https://images1.apartments.com/i2/JtVhi3uicAXW9S4qlowPv5xpBA4sBOfKtmjBZz4DyFE/111/parkmerced-apartments-san-francisco-ca-interior-photo.jpg","https://images1.apartments.com/i2/K7UK0n0l_C5Jhl48dfJ4ZNkB4UW8nXAFEn3TuGuQI8s/111/parkmerced-apartments-san-francisco-ca-interior-photo.jpg","https://images1.apartments.com/i2/C70xxtUqEAC0Ur_u1Ae7QGFsiGjKhH7sPLgP-DCLaxE/111/parkmerced-apartments-san-francisco-ca-interior-photo.jpg","https://images1.apartments.com/i2/DbTD7hpY6ZofzvDwT-yADLVeZf6-KZJa6D8dxTw6k8o/111/parkmerced-apartments-san-francisco-ca-interior-photo.jpg"]},
+ {h:"lakewood.lakemerced",r:"515 John Muir Dr",n:"Lake Merced",p:3499,bd:2,ba:1,sf:0,bmr:true,src:"apt",url:"https://www.apartments.com/lakewood-apartments-at-lake-merced-san-francisco-ca/wzzsn3h/",mq:"515 John Muir Dr, San Francisco, CA 94132",ph:["https://images1.apartments.com/i2/_-2yFHjcA-NIF7kAwKvgJkIO2kposU0Px-3Y5-R0Kno/116/lakewood-apartments-at-lake-merced-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/nptT7MSPrMBYnNjvDBZC1_SBIHR60tOTLRLmsGcIvJ0/111/lakewood-apartments-at-lake-merced-san-francisco-ca-panoramic-views-of-lake-merced-from-this.jpg","https://images1.apartments.com/i2/WpRou8OmSUlx_IIpzwjYPsLlkqx6k3H8bbo2_fY5j7Y/111/lakewood-apartments-at-lake-merced-san-francisco-ca-double-master-suites-2-walk-in-closets.jpg","https://images1.apartments.com/i2/FwsjnKZUny9PNYSrhGkTlo58jGx08l_poQZt97a6BvE/111/lakewood-apartments-at-lake-merced-san-francisco-ca-huge-1br-floor-plan-perfect-for-roommate.jpg","https://images1.apartments.com/i2/pkjIjiiePh_YI9uQhTjqGWyANKyVZjssvHZodAGxzjE/111/lakewood-apartments-at-lake-merced-san-francisco-ca-spacious-studio.jpg"]},
+ {h:"1801.mission",r:"1801 Mission St",n:"Mission",p:3775,bd:2,ba:1,sf:0,bmr:true,src:"apt",url:"https://www.apartments.com/1801-mission-st-san-francisco-ca/zk7w5fw/",mq:"1801 Mission St, San Francisco, CA 94103",ph:["https://images1.apartments.com/i2/97vVna2ny91duL5--oRrNPrSSmMINX3rxBjrB5EPB-8/116/1801-mission-st-san-francisco-ca-building.jpg","https://images1.apartments.com/i2/vCkTM3CQsjuMrbZojk-xDg10YYFQtEDrWHcIl9zZqCA/111/1801-mission-st-san-francisco-ca-building.jpg","https://images1.apartments.com/i2/jNdf49Gl5v5JVcxVTDJJD7yxlDmp3fcbCtb31FkHcl4/111/1801-mission-st-san-francisco-ca-building.jpg","https://images1.apartments.com/i2/CwaNyNN3srZTpisvwuqcWfBdBvj-d1O4w9KlwmfZfU0/111/1801-mission-st-san-francisco-ca-entrance.jpg","https://images1.apartments.com/i2/iJNiNl3H2rbISiX64Eia40Ere7ZNpUsa3_XEv4dT6PU/111/1801-mission-st-san-francisco-ca-retail-entrance.jpg"]},
+ {h:"188.octavia",r:"188 Octavia St",n:"Hayes Valley",p:3900,bd:2,ba:1,sf:0,bmr:true,src:"apt",url:"https://www.apartments.com/188-octavia-san-francisco-ca/zr2464w/",mq:"188 Octavia St, San Francisco, CA 94102",ph:["https://images1.apartments.com/i2/Eng_C6O8nD3I0GQUv1ZfNMOA57DEkVuGhrUpoysokXM/116/188-octavia-san-francisco-ca-2-bedroom.jpg","https://images1.apartments.com/i2/FY6bQsZL-IWMxfds9P3KfkkDum_RcIZ06fACVLrvwiI/105/188-octavia-san-francisco-ca-lobby.jpg","https://images1.apartments.com/i2/1hnZlKIMH7vfNaMR-tzz1NiZcLeoO-gnGmbp43JEBVk/105/188-octavia-san-francisco-ca-rooftop-kitchen.jpg","https://images1.apartments.com/i2/N0OLySF-O1HZl1-9BAKWtx3apAGxSzPpHYWbQ28-gh0/111/188-octavia-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/u_CqVT06K_k6_Us27jMIXjxPGV6u8BYP8o6xew2uUp4/111/188-octavia-san-francisco-ca-building-photo.jpg"]},
+ {h:"150.vanness",r:"150 Van Ness Ave",n:"Hayes Valley",p:4100,bd:2,ba:1,sf:670,bmr:true,src:"apt",url:"https://www.apartments.com/150-van-ness-san-francisco-ca/8pdvlx3/",mq:"150 Van Ness Ave, San Francisco, CA 94102",ph:["https://images1.apartments.com/i2/r14AnQGuoGYDET-FwUdVLN6wU0Ry8yT4QrDyVyRaXyk/116/150-van-ness-san-francisco-ca-heated-pool.jpg","https://images1.apartments.com/i2/kUuSpomm4fy3rHavCVD09cfAFwCzVV7lw4u7seWNVgI/111/150-van-ness-san-francisco-ca-2-br-1-ba---670-sf.jpg","https://images1.apartments.com/i2/-1AhBmxqlVQa7Jr1DKwdqd_QiJ0_psdGR3Mm6q6Kois/111/150-van-ness-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/douAURHgJwNiE_wqWNwSVe9mwp0eZkVZefDbE2mv6tI/111/150-van-ness-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/bWYFuErT5Egzb25gcZ680FxYEqo1GABDY8XHwryITLE/111/150-van-ness-san-francisco-ca-building-photo.jpg"]},
+ {h:"hq.harrison",r:"1532 Harrison St",n:"SoMa",p:4273,bd:2,ba:1,sf:615,fl:["loft"],src:"z",url:"https://www.zillow.com/apartments/san-francisco-ca/hq/CkBg6D/",mq:"1532 Harrison St, San Francisco, CA 94103",ph:["https://photos.zillowstatic.com/fp/7b63fc6eb8538f96719ee40c972c83aa-cc_ft_768.webp","https://photos.zillowstatic.com/fp/984eab60f0d10e75144d15104be090eb-cc_ft_768.webp","https://photos.zillowstatic.com/fp/37f72e777602012f896db383e30a010d-cc_ft_768.webp","https://photos.zillowstatic.com/fp/c8144f8638515b458ba54c07735e15d1-cc_ft_768.webp","https://photos.zillowstatic.com/fp/9d396c188b23241962b4f944f4f8c192-cc_ft_768.webp","https://photos.zillowstatic.com/fp/9f39de607f43d728dd2fff6eb98be08b-cc_ft_768.webp","https://photos.zillowstatic.com/fp/50e0854fde7b6bf2af6c7844717435ec-cc_ft_768.webp"]},
+ {h:"loft168.bluxome",r:"168 Bluxome St",n:"SoMa",p:3900,bd:2,ba:1,sf:0,fl:["loft"],bmr:true,src:"z",url:"https://www.zillow.com/apartments/san-francisco-ca/loft-168/CjjCZ6/",mq:"168 Bluxome St, San Francisco, CA 94107",ph:["https://photos.zillowstatic.com/fp/88d0be7576a8a717e1aa1a30251e6126-cc_ft_768.webp","https://photos.zillowstatic.com/fp/19e6d47baefc56fa2dfd097e653cc7ce-cc_ft_768.webp","https://photos.zillowstatic.com/fp/14be5eca905e85d4c515b064e70cd228-cc_ft_768.webp","https://photos.zillowstatic.com/fp/31ecb622f22ebb62957caae9da48c48a-cc_ft_768.webp","https://photos.zillowstatic.com/fp/3d01a4915a86f76320abe4ed840abcf4-cc_ft_768.webp","https://photos.zillowstatic.com/fp/22e6d0584aa098fa8907fe2114be55b9-cc_ft_768.webp","https://photos.zillowstatic.com/fp/62ac52d32595188116848bec608f8f51-cc_ft_768.webp"]},
+ {h:"660.bush",r:"660 Bush St #103",n:"Nob Hill",p:3400,bd:2,ba:1,sf:0,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-open-sun-300pm-315pm/7937528813.html",mq:"660 Bush St, San Francisco, CA 94108",ph:[CG+"00H0H_2sTZNJZO64Y_0qs0eU_600x450.jpg",CG+"00P0P_lSh2f9hUOWd_0gw0b1_600x450.jpg",CG+"00B0B_lV6dSwzmblm_0gw0b1_600x450.jpg",CG+"00u0u_jdU6zGS2EW7_0gw0b1_600x450.jpg",CG+"00W0W_6q1BSPdup2z_0gw0b1_600x450.jpg",CG+"00606_8hqgrNUbiau_0b10gw_600x450.jpg",CG+"00404_1sFo6DyWHjH_0gw0b1_600x450.jpg"]},
+ {h:"415.tehama",r:"415 Tehama St (1906 8-unit)",n:"SoMa",p:4395,bd:3,ba:1,sf:0,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-bicycle-rack-on-site/7933689430.html",mq:"415 Tehama St, San Francisco, CA 94103",ph:[CG+"00E0E_cTgKYmICqEp_0cU0jm_600x450.jpg",CG+"00Z0Z_3Qjs2NjuD02_0cU0jm_600x450.jpg",CG+"00000_GanYCQ1Ksx_0cU0jm_600x450.jpg",CG+"00j0j_cxhFJVmpnkJ_0pO0jm_600x450.jpg",CG+"00K0K_h7KkHifbtO0_0ew0jm_600x450.jpg",CG+"00d0d_lcNAm0ZMowp_0ew0jm_600x450.jpg",CG+"00L0L_1zWh53NpQG4_0ew0jm_600x450.jpg"]},
+ {h:"noe.bright2br",r:"Large Bright 2BR, period details",n:"Noe Valley",p:4095,bd:2,ba:1,sf:1210,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-large-bright-two-bedroom/7936141659.html",mq:"Noe Valley, San Francisco, CA",ph:[CG+"00g0g_4kOUcqfATvo_0lM0t2_600x450.jpg",CG+"01717_6xnYuVC2WmX_0t20CI_600x450.jpg",CG+"00D0D_5m7J48W9FBH_0t20CI_600x450.jpg",CG+"00j0j_3n4DKTyyMnt_0t20CI_600x450.jpg",CG+"00W0W_cMLarp3zrqh_0t20CI_600x450.jpg",CG+"00s0s_eAziAzzEF4E_0t20CI_600x450.jpg",CG+"00c0c_ctdQMbxjymo_0t20CI_600x450.jpg"]},
+ {h:"bayview.3bd",r:"Thoughtfully maintained 3BR",n:"Bayview",p:4200,bd:3,ba:1,sf:1200,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-thoughtfully-maintained/7936441056.html",mq:"Bayview, San Francisco, CA",ph:[CG+"00x0x_bVxUJcXHH9X_06y06y_600x450.jpg",CG+"00a0a_3lT6M0ORbt_06w08H_600x450.jpg",CG+"00I0I_3EXnCLbjsxL_06w08H_600x450.jpg",CG+"01414_agQqCbRCr1v_06w08H_600x450.jpg",CG+"00j0j_9IkQf3vGs6s_06w08H_600x450.jpg",CG+"01717_cWFCWOAU0B1_06w08H_600x450.jpg",CG+"01313_lU8VCi3afQX_06w08H_600x450.jpg"]},
+ {h:"excelsior.3bd",r:"Well-maintained 3BD/2BA",n:"Excelsior",p:4198,bd:3,ba:2,sf:1200,fl:["2ba"],src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-well-maintained-3bd-2br/7933687744.html",mq:"Excelsior, San Francisco, CA",ph:[CG+"00c0c_kERhOBVQma2_0kE0rx_600x450.jpg",CG+"00z0z_9Cbq1NrlpdB_07K0ak_600x450.jpg",CG+"00202_aMgfjK2I72T_0kE0rx_600x450.jpg",CG+"00v0v_jRkv75NetuU_0kE0rx_600x450.jpg",CG+"00c0c_6fMiDByCFeK_0kE0rx_600x450.jpg",CG+"00606_5FNewfDkgLj_0kE0rx_600x450.jpg",CG+"01212_avDd132KHBq_0kE0rx_600x450.jpg"]},
+ {h:"innerrichmond.2br",r:"Water/trash incl. 2BR",n:"Inner Richmond",p:3950,bd:2,ba:1,sf:0,src:"cl",url:"https://sfbay.craigslist.org/sfc/apa/d/san-francisco-water-trash-included/7935849435.html",mq:"Inner Richmond, San Francisco, CA",ph:[CG+"00n0n_7yQZj8UGj0A_0lM0t2_600x450.jpg",CG+"00f0f_k0DiPreCGU3_0lM0t2_600x450.jpg",CG+"00b0b_gC7yeInwKGB_0lM0t2_600x450.jpg",CG+"01515_e2qQBign5r7_0lM0t2_600x450.jpg",CG+"00B0B_hEwkrqDTVJS_0lM0t2_600x450.jpg",CG+"00t0t_6V0OkQfd4MZ_0lM0t2_600x450.jpg",CG+"00u0u_7RIbhVC3SAc_0lM0t2_600x450.jpg"]},
+ {h:"3509.mission",r:"3509 Mission St #3509A",n:"Mission",p:3550,bd:2,ba:1,sf:800,src:"apt",url:"https://www.apartments.com/3509-mission-st-san-francisco-ca-unit-3509a/0gzn2c2/",mq:"3509 Mission St, San Francisco, CA 94110",ph:["https://images1.apartments.com/i2/XyBrKrMfyco75MvpJtNPlQ1AVU6-ITtmzL1vMEf-TqQ/116/3509-mission-st-unit-3509a-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/m9KwjndNepq79LLHuHBstUc441-fF6adX0MSMPnt6Ls/111/3509-mission-st-unit-3509a-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/8CUbMTACe8li099VsbVRGc_fSRZ0NYLtQWpp5O3qyik/111/3509-mission-st-unit-3509a-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/Z9Q6RKUq4PyM-nEWWWDCWuSs-jVsub0djv05IL5doJ0/111/3509-mission-st-unit-3509a-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/5Ic_tTybhL0KDI40R4t8o8AYHo2CjRK1osOWp8xnXS4/111/3509-mission-st-unit-3509a-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/bjSxS7ddEsT6PzYhhhVoZdtLYoM0Nk2uWGSlDpSxc3k/111/3509-mission-st-unit-3509a-san-francisco-ca-building-photo.jpg"]},
+ {h:"highpoint.terrace",r:"1888 Geneva Ave",n:"Excelsior",p:3700,bd:2,ba:2,sf:0,fl:["2ba"],src:"apt",url:"https://www.apartments.com/highpoint-terrace-san-francisco-ca/g05zshw/",mq:"1888 Geneva Ave, San Francisco, CA 94134",ph:["https://images1.apartments.com/i2/XE7VDRsZUt5PiOZKvRBZcm-v_a90kPfVk5M5mvq7JgI/116/highpoint-terrace-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/fVnW3xCzekKPHytpY-m7ovV7WksaCrxKtgT19-9zS_o/111/highpoint-terrace-san-francisco-ca-2b-2ba.jpg","https://images1.apartments.com/i2/6wRPhmzeX6YTK7ymjL9W45L8IsXHY0b7Bkbmtf8-iFk/111/highpoint-terrace-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/VaEuySZimNYXM42NWsMY_K3FajOlWfATwEokIvbdMf8/111/highpoint-terrace-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/6EVvSQbxGHYMZjpgh_RBQgL5uW6ax6WIZtHwWjxeS7E/111/highpoint-terrace-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/kOF-mYZpnTpS0Sn5rj_6QAuOM2wMKoVu9R43GjKQC0s/111/highpoint-terrace-san-francisco-ca-building-photo.jpg"]},
+ {h:"1354.palou",r:"1354 Palou Ave",n:"Bayview",p:3700,bd:2,ba:2,sf:0,fl:["2ba"],src:"apt",url:"https://www.apartments.com/1354-palou-ave-san-francisco-ca/zs0j6tw/",mq:"1354 Palou Ave, San Francisco, CA 94124",ph:["https://images1.apartments.com/i2/km-xvMT3iJTB3SZLSf1KstWVmTPrJAKvQmzkXyE4f8I/116/1354-palou-ave-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/rKQbgbUG_TDlKKx0xBJirk83kBEY9Ajx76WoQysypSo/111/1354-palou-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/u54gAGZRK_MsPldVL_X-mO8oT7XgFR0e8YEw9V8lJo8/111/1354-palou-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/OSOjJRm-AD39NQGDcGuYAnJhJKdr0vOJ1oFEOmjRs1I/111/1354-palou-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/bXML3hmK3hoHjvJ57DGTgpvjSvOOkNmVO5szg3A6_kk/111/1354-palou-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/QZfZjklXKKeCQjkuWx50CKmc4iejqbex-sS98MOh8ic/111/1354-palou-ave-san-francisco-ca-building-photo.jpg"]},
+ {h:"224.cordova",r:"224 Cordova St",n:"Excelsior",p:4200,bd:2,ba:1,sf:1268,src:"apt",url:"https://www.apartments.com/224-cordova-st-san-francisco-ca/3yjfymd/",mq:"224 Cordova St, San Francisco, CA 94112",ph:["https://images1.apartments.com/i2/7r8x3OhUSf6qblQdrkAXeTM7h9gKps73n5__N7IqCfQ/116/224-cordova-st-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/w0EP2irc7yhyyXH2VTxQsdoqWIyiIG-b8Zc2S6_Az1g/111/224-cordova-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/4t4e4ZLPWlbQoUZT3Y1XLs1NHIQAycJGsJ0DIzNg-VA/111/224-cordova-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/iFTTxmFjLbg7Hu9cni7WTrTt3dnY7OMPN0GplJvWgqU/111/224-cordova-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/EXTu1Dznf2y0OSVZWoWMjZ5khGKM7Bmjvj8x09sJZw8/111/224-cordova-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/h1XYDwIH-gUYlal0qbmXxmsu4OZU1UjbTK_61cgoyq0/111/224-cordova-st-san-francisco-ca-building-photo.jpg"]},
+ {h:"1450.pacheco",r:"1450 Pacheco St",n:"Sunset",p:3980,bd:2,ba:1,sf:0,src:"apt",url:"https://www.apartments.com/1450-pacheco-st-san-francisco-ca/ljfjbkd/",mq:"1450 Pacheco St, San Francisco, CA 94116",ph:["https://images1.apartments.com/i2/r683IKO3fHVV4Gxff_f1uh7qHcDH5js0N4aorQaAPb4/116/1450-pacheco-st-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/r8jxyHdosvVrE2Avghq8ziVowagECv-gKgj8V1OZ2V4/111/1450-pacheco-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/AxbpgS4dXwGaAatHvQ4DSDhz01hLCB45qLhH-sIjNPM/111/1450-pacheco-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/g9RPtLuX-3BsLcVop0sHB-RMTXy0cy_tR47XCwdzcBg/111/1450-pacheco-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/kTHJwNSgGZ4SeLn32VMjYCxenPKYeJplKFdCOVi6I68/111/1450-pacheco-st-san-francisco-ca-building-photo.jpg"]},
+ {h:"2726.sanbruno",r:"2726 San Bruno Ave",n:"Visitacion Valley",p:4100,bd:3,ba:1,sf:1500,src:"apt",url:"https://www.apartments.com/2726-san-bruno-ave-san-francisco-ca/bjbn07b/",mq:"2726 San Bruno Ave, San Francisco, CA 94134",ph:["https://images1.apartments.com/i2/kz7v4hCldNs91Y8xoq4ruiVcptdsulOjDlvmz3rnCO4/116/2726-san-bruno-ave-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/AH1eNduRYXH020IUggpBXky4PaJitA9SdfrAon08Pws/111/2726-san-bruno-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/TndV6EgtoW2SXqtYeL0XH6feUjww6_UsN2XHYnoVLJQ/111/2726-san-bruno-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/Ik8lUGgrnGDfiCEnJQlk8r4EYNDoXYVch9NtFLkvgE0/111/2726-san-bruno-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/XDvfthppT3UCb8TmKeYvLmpk4lZMhVHMRPSSl0P-21I/111/2726-san-bruno-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/bEI7C_m31bI0QCcfj-kTX2WzoqY4m8pBKuc9340eYe0/111/2726-san-bruno-ave-san-francisco-ca-building-photo.jpg"]},
+ {h:"848.girard",r:"848 Girard St",n:"Visitacion Valley",p:3500,bd:3,ba:1,sf:0,src:"apt",url:"https://www.apartments.com/848-girard-st-san-francisco-ca/jgcdrr5/",mq:"848 Girard St, San Francisco, CA 94134",ph:["https://images1.apartments.com/i2/OPJ56Qo4ViBAL01AK016kV9Bts0DEYxGJY1L7PJZGqY/116/848-girard-st-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/YhoGM_MLehUiK791rO0NJUB0PTn4veC9yQlDoC_Z7HI/111/848-girard-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/gRkkqqpkQwk4nzI_mIvj8slgbwGhMq764SL8PO2DzvY/111/848-girard-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/cdFYW1xvzK3bNEnlwxWV6OnBZs1-9xASLgUpeI0WnNY/111/848-girard-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/KxDKmvztaNtOZQr60x97pTvXXGET_2wbcv66ai48A7k/111/848-girard-st-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/tNH9IObtjjUHJXICT0OmG6pzTy-NyqhIr8uNICuuB7c/111/848-girard-st-san-francisco-ca-building-photo.jpg"]},
+ {h:"3345.fillmore",r:"3345 Fillmore St",n:"Cow Hollow",p:3950,bd:2,ba:1,sf:0,src:"apt",url:"https://www.apartments.com/3345-fillmore-street-apartments-san-francisco-ca/d4eqxbh/",mq:"3345 Fillmore St, San Francisco, CA 94123",ph:["https://images1.apartments.com/i2/27hfTySDfrP-fZDp3IoA84sVu5Z3P63oJAEh93uoh74/116/3345-fillmore-street-apartments-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/kYozKl3EqMN4gwc1E62udO71gloXHDsQejetR6KEdlc/116/3345-fillmore-street-apartments-san-francisco-ca-building-photo.jpg"]},
+ {h:"1566.newcomb",r:"1566 Newcomb Ave",n:"Bayview",p:4290,bd:3,ba:1,sf:0,src:"apt",url:"https://www.apartments.com/1566-newcomb-ave-san-francisco-ca/fvjxg1t/",mq:"1566 Newcomb Ave, San Francisco, CA 94124",ph:["https://images1.apartments.com/i2/CNKtKTL_9nUpOcStsw9IGgn7Z0NBud870dno8z6C_nA/116/1566-newcomb-ave-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/3p-kCtM_teM8PfeIeM3QTmJF1LZCJ0JkBT2wL1-RWwc/111/1566-newcomb-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/IZg4KNHqHMac_zU8kw5HunnaIHlQxnt-hg-NWQnyZms/111/1566-newcomb-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/dOiq-yNDec8umvy9dJl7Lxf64zS9JPTVu5Rg56T6cOE/111/1566-newcomb-ave-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/sayqz1FjJ2EMsIvzfNZdt9_tugqW3d8TglLt3X6NcyU/111/1566-newcomb-ave-san-francisco-ca-building-photo.jpg"]},
+ {h:"247.20th",r:"247 20th Ave #1",n:"Outer Richmond",p:3500,bd:2,ba:1,sf:0,src:"apt",url:"https://www.apartments.com/247-20th-ave-san-francisco-ca/hhktph2/",mq:"247 20th Ave, San Francisco, CA 94121",ph:["https://images1.apartments.com/i2/vbh7XTHIiXroCrb2QMuGo88MMy2BPsn49VLJz4lO1Oo/116/247-20th-ave-unit-apt-1-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/TBTDavykJ4YKoG2JQH_XzeT--M02BRSosfIlCZVgedY/111/247-20th-ave-unit-apt-1-san-francisco-ca-front-of-building.jpg","https://images1.apartments.com/i2/7vj-lScK5osafV9-d9U-3YWa_eI7PKIIhsl9iEz_LEk/111/247-20th-ave-unit-apt-1-san-francisco-ca-unit-entry.jpg","https://images1.apartments.com/i2/80Be7NKxuwG3L1HX0cJrONjipebaUN0T0AZ1zqV1xpo/111/247-20th-ave-unit-apt-1-san-francisco-ca-bedroom-1.jpg","https://images1.apartments.com/i2/6xoB2BTNoHmCfu2p7IbJaAbfQRm-GEFIXxt0-8Ut3tU/111/247-20th-ave-unit-apt-1-san-francisco-ca-optional-off-street-carport.jpg"]},
+ {h:"346.monticello",r:"346 Monticello St #A",n:"OMI",p:2850,bd:2,ba:1,sf:0,src:"apt",url:"https://www.apartments.com/346-monticello-st-san-francisco-ca-unit-a/xl83l9m/",mq:"346 Monticello St, San Francisco, CA 94132",ph:["https://images1.apartments.com/i2/dAwVcDKWk0NC0saAOHBayr707tOrOcFX0QdrN2xhSdw/116/346-monticello-st-unit-a-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/bjwB62wNa583O9Va-72ksZoRT2lvvAaasx3uStV1ieA/111/346-monticello-st-unit-a-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/JXRzmgPzEE1tChp6zaWgs7nPuEaowGwpLLsFHn7Kkd0/111/346-monticello-st-unit-a-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/r3Wa24BtpV7_BaqJUDjNPYD9aXR3NoPdQFJkr_JvS-c/111/346-monticello-st-unit-a-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/vnoECzo4MZ7nvlOIP-h2RmrIzYjx8uzlRqAUNqylG-U/111/346-monticello-st-unit-a-san-francisco-ca-building-photo.jpg"]},
+ {h:"sophie.maxwell",r:"Sophie Maxwell Building",n:"Mission Bay",p:2183,bd:2,ba:1,sf:0,bmr:true,src:"apt",url:"https://www.apartments.com/the-sophie-maxwell-building-san-francisco-ca/ge7m3jy/",mq:"Mission Bay, San Francisco, CA",ph:["https://images1.apartments.com/i2/qqMP572BPHz0j_tsx5waYTcNxChIauLqMYDIS3_6kzw/116/the-sophie-maxwell-building-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/dIc0quicCy53pbOkahzJhTLwV6HWTHrBbmunPAmzfEw/111/the-sophie-maxwell-building-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/KE3Zsxbn86z57OexCcq1Epy30IxF_4CbN6xfyLdPiXM/111/the-sophie-maxwell-building-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/JGsqwFprcvdgvtdlBDGuiTfPg0HMqgoAEXfx_E7MxRo/111/the-sophie-maxwell-building-san-francisco-ca-building-photo.jpg","https://images1.apartments.com/i2/w20NTk4WyHhMKFW_1jzU_Px-3GsLG3PVzoCAlQJCtOA/111/the-sophie-maxwell-building-san-francisco-ca-building-photo.jpg"]},
+ {h:"waterbend",r:"5880 3rd St",n:"Bayview",p:4192,bd:2,ba:1,sf:0,bmr:true,src:"apt",url:"https://www.apartments.com/waterbend-san-francisco-ca/l7w7epd/",mq:"5880 3rd St, San Francisco, CA 94124",ph:["https://images1.apartments.com/i2/EoDGegXMmRrDIOg85IWsBUPqa9G8QXtWe1MoSQj2it4/116/waterbend-san-francisco-ca-primary-photo.jpg","https://images1.apartments.com/i2/fEnUTMZyWIMCtuSx5-DFm4lvJhZFyqrpmTfsoBIGHis/111/waterbend-san-francisco-ca-2br1ba-two-bedroom-a.jpg","https://images1.apartments.com/i2/NoVRPIXBHYq4o8ojhgJdINEWnB9d2crK37iC71_99Zo/111/waterbend-san-francisco-ca-interior-photo.jpg","https://images1.apartments.com/i2/oM-6HeNzgb5XfjFM4U01Bg6KX9c6gJ5rgU2F81L9Cyc/111/waterbend-san-francisco-ca-interior-photo.jpg","https://images1.apartments.com/i2/YOwyLVrr-m6M6hv_AXFpjwCA8bI1x19jjoBw9Wne7SA/111/waterbend-san-francisco-ca-interior-photo.jpg"]}
+];
+const DEAD=["missionbay.2br","bush.stylish","bonus.2br","sf.3bed2bath","188.octavia","3345.fillmore"];
+const UNCONF=["1660.sacramento","3509.mission","1354.palou","224.cordova","1450.pacheco","2726.sanbruno","848.girard","1566.newcomb","247.20th","346.monticello"];
+const ALL=APTS.concat(COMPACT.map(expand)).filter(a=>!DEAD.includes(a.handle));
+ALL.forEach((a,i)=>{a.rank="#"+(i+1)+" of "+ALL.length+(i===0?" · BEST VALUE":"");a.vstat=UNCONF.includes(a.handle)?"unconf":"ok";});
+
+const feed=document.getElementById('feed');
+
+function slideHTML(s, apt){
+  if(s==="__MAP__"){
+    const q=encodeURIComponent(apt.mapq);
+    return `<div class="slide"><iframe loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="https://www.google.com/maps?q=${q}&z=15&output=embed"></iframe><div class="maplbl">📍 ${apt.location.split('·')[0].trim()}</div></div>`;
+  }
+  return `<div class="slide"><img loading="lazy" referrerpolicy="no-referrer" src="${s}" alt="apartment photo"></div>`;
+}
+
+function postHTML(apt, idx){
+  const specs=apt.specs.map(s=>`<span class="chip ${s.hot?'hot':''}">${s.t}</span>`).join('');
+  const slides=apt.photos.map(p=>slideHTML(p,apt)).join('');
+  const dots=apt.photos.map((_,i)=>`<i class="${i===0?'on':''}"></i>`).join('');
+  const comments=apt.comments.map(cm=>`
+    <div class="cm">
+      <div class="cmav" style="background:hsl(${(cm.u.length*47)%360} 55% 55%)">${cm.i}</div>
+      <div class="body"><b>${cm.u}</b>${cm.c}
+        <div class="meta"><span>${cm.t}</span><span>${cm.l} likes</span><span>Reply</span></div>
+      </div>
+      <div class="hrt">♡</div>
+    </div>`).join('');
+  const feats=apt.features.split('\n').map(f=>`<div class="feat">${f}</div>`).join('');
+  return `
+  <section class="post">
+    <div class="card">
+      <div class="head">
+        <div class="avatar"><div>${apt.initials}</div></div>
+        <div>
+          <div class="uname">${apt.handle} ${apt.verified?CHECK:''}</div>
+          <div class="uloc">${apt.location}</div>
+        </div>
+        <div class="more">⋯</div>
+      </div>
+
+      <div class="media" data-n="${apt.photos.length}">
+        <div class="rank">${apt.rank}</div>
+        <div class="wm">Loft<b>Tok</b></div>
+        <div class="counter">1/${apt.photos.length}</div>
+        <div class="track">${slides}</div>
+        <div class="dots">${dots}</div>
+        <button class="arrow l">‹</button><button class="arrow r">›</button>
+        <div class="rail">
+          <button><span class="ic" data-like>${HEART}</span><span data-likecount>${apt.likes}</span></button>
+          <button><span class="ic">${COMMENT}</span><span>${apt.comments.length}</span></button>
+          <button><span class="ic">${SAVE}</span><span>Save</span></button>
+          <button><span class="ic">${SHARE}</span><span>Share</span></button>
+        </div>
+      </div>
+
+      <div class="cap" style="padding-top:10px">
+        <div class="price">${apt.price}</div>
+        <div class="specs">${specs}</div>
+        <span><b>${apt.handle}</b>${apt.caption}</span>
+        <div style="margin-top:8px">${feats}</div>
+        <div class="tags" style="margin-top:8px">${apt.tags}</div>
+        <a class="listing" href="${apt.link}" target="_blank" rel="noopener">🔗 ${apt.linktext}</a>
+        <div class="src" style="${apt.vstat==='unconf'?'color:#c47f17;font-weight:600':'color:#0a8a3f;font-weight:600'}">${apt.vstat==='unconf'?'⚠ Availability unconfirmed — reconfirm before contacting':'✓ Availability checked 6/1'}</div>
+        <div class="src">${apt.source}</div>
+      </div>
+      <div class="cmh" data-cmtoggle>View all ${apt.comments.length} comments</div>
+      <div class="cmts collapsed">${comments}</div>
+      <div class="ts">Listed today</div>
+      <div class="addcm"><span class="e">☺</span> Add a comment…</div>
+    </div>
+  </section>`;
+}
+
+feed.innerHTML = ALL.map(postHTML).join('');
+
+// carousel logic per post
+document.querySelectorAll('.media').forEach(media=>{
+  const track=media.querySelector('.track');
+  const counter=media.querySelector('.counter');
+  const dots=[...media.querySelectorAll('.dots i')];
+  const n=+media.dataset.n;
+  const upd=()=>{
+    const i=Math.round(track.scrollLeft/track.clientWidth);
+    counter.textContent=`${i+1}/${n}`;
+    dots.forEach((d,k)=>d.classList.toggle('on',k===i));
+  };
+  track.addEventListener('scroll',()=>requestAnimationFrame(upd),{passive:true});
+  media.querySelector('.arrow.l').addEventListener('click',()=>track.scrollBy({left:-track.clientWidth,behavior:'smooth'}));
+  media.querySelector('.arrow.r').addEventListener('click',()=>track.scrollBy({left:track.clientWidth,behavior:'smooth'}));
+});
+
+// like toggle (rail + double tap)
+document.querySelectorAll('.media').forEach(media=>{
+  const railLike=media.querySelector('[data-like]');
+  if(railLike) railLike.parentElement.addEventListener('click',()=>railLike.classList.toggle('act'));
+});
+
+// collapsible comments
+document.querySelectorAll('[data-cmtoggle]').forEach(h=>{
+  const list=h.nextElementSibling;
+  const total=list.querySelectorAll('.cm').length;
+  h.addEventListener('click',()=>{
+    const collapsed=list.classList.toggle('collapsed');
+    h.textContent=collapsed?`View all ${total} comments`:'Hide comments';
+  });
+});
+
+// hide swipe hint after first scroll
+feed.addEventListener('scroll',()=>{const h=document.getElementById('hint');if(h)h.style.display='none';},{once:true});
+</script>
+</body>
+</html>
