@@ -142,6 +142,26 @@ function fbLead(o){
     comments:fbComments(lines)
   };
 }
+const BEDROOM_BUDGET_LIMIT=2500;
+function numericPrice(apt){
+  const m=String(apt.price||"").match(/\$([\d,]+)/);
+  return m?Number(m[1].replace(/,/g,"")):null;
+}
+function budgetBedroomCount(apt){
+  if(apt.budgetBedrooms) return apt.budgetBedrooms;
+  const specText=(apt.specs||[]).map(s=>s.t).join(" ");
+  const m=specText.match(/(\d+(?:\.\d+)?)\s*bd/i);
+  return m?Number(m[1]):null;
+}
+function pricePerBedroom(apt){
+  const price=numericPrice(apt);
+  const beds=budgetBedroomCount(apt);
+  return price&&beds?price/beds:null;
+}
+function withinBedroomBudget(apt){
+  const ppb=pricePerBedroom(apt);
+  return ppb===null||ppb<=BEDROOM_BUDGET_LIMIT;
+}
 
 const APTS = [{
   rank:"#1 of 100 · BEST VALUE",
@@ -571,6 +591,7 @@ fbLead({
 }),
 fbLead({
   handle:"mission.valencia.loft", initials:"MS", location:"Mission loft near Valencia · San Francisco", price:"$5,100/mo",
+  budgetBedrooms:2,
   specs:[{t:"Loft layout",hot:true},{t:"1.5 ba",hot:false},{t:"950 sqft",hot:false},{t:"+ patio",hot:true},{t:"7/1",hot:true}],
   caption:"Facebook group lead from Mabel Shah: Mission loft near Valencia with 950 interior sqft plus about 500 sqft of private patio, 1.5 baths, July 1 availability, and the best outdoor-space signal in the Facebook set.",
   features:"✔︎ Loft layout near Valencia\n✔︎ 950 sqft interior + approx 500 sqft private patio\n✔︎ 1.5 baths and July 1 availability\n✔︎ Great Mission location if the bedroom setup works",
@@ -683,6 +704,7 @@ fbLead({
 }),
 fbLead({
   handle:"graham.26th.sharedloft", initials:"GP", location:"26th St designer loft · Potrero/Mission edge", price:"$2,300/mo",
+  budgetBedrooms:1,
   specs:[{t:"Shared 2 bd",hot:false},{t:"2 ba",hot:true},{t:"1,700 sqft",hot:true},{t:"Designer loft",hot:true},{t:"Marketplace",hot:true}],
   caption:"Marketplace shared-loft lead from Graham Plumb: designer 2BR/2BA loft at the Potrero/Mission edge, 1,700 sqft, 18-foot ceilings, south-facing windows, deck, and a room-plus-office setup for one person.",
   features:"✔︎ Shared 2BR / 2BA designer loft\n✔︎ 1,700 sqft with 18-foot ceilings\n✔︎ South-facing ceiling-height windows + deck\n✔︎ Two rooms available for one person; not a whole-unit rental",
@@ -700,6 +722,7 @@ fbLead({
 }),
 fbLead({
   handle:"jake.1bluxome.room", initials:"JS", location:"1 Bluxome loft room · SoMa", price:"$3,500/mo + utilities",
+  budgetBedrooms:1,
   specs:[{t:"Room in 2 bd",hot:false},{t:"2 ba",hot:true},{t:"Loft",hot:true},{t:"Flexible move-in",hot:true},{t:"Shared",hot:true}],
   caption:"Facebook shared-loft lead from Jake Stevens: room in a 2 bed / 2 bath 1 Bluxome loft, with large windows, in-unit laundry, Caltrain/Oracle Park proximity, and flexible move-in timing.",
   features:"✔︎ Room in a real SoMa 2BR / 2BA loft\n✔︎ Large windows + in-unit laundry signal\n✔︎ Near Caltrain and Oracle Park\n✔︎ Shared setup, not a whole-unit rental",
@@ -890,6 +913,7 @@ fbLead({
   rank:"#6 of 100 · LIVE/WORK LOFT",
   handle:"somaresidences", initials:"SR", location:"1045 Mission St · SoMa, San Francisco", verified:true,
   price:"from $3,027/mo",
+  budgetBedrooms:1,
   specs:[{t:"Studio–1 bd",hot:false},{t:"Live/Work",hot:true},{t:"Loft",hot:true},{t:"EV + W/D",hot:false}],
   caption:"Live/work lofts at SOMA Residences 🛠️ Studio-with-loft mezzanines, double-height windows, run your business from home (legit live/work zoning).",
   features:"✔︎ True live/work zoning\n✔︎ Studio-with-loft mezzanine layouts\n✔︎ EV charging · in-unit W/D · controlled access\n✔︎ Heart of SoMa near BART",
@@ -912,6 +936,7 @@ fbLead({
   rank:"#7 of 100 · BEST AMENITIES",
   handle:"lseven.soma", initials:"L7", location:"1222 Harrison St · SoMa, San Francisco", verified:true,
   price:"from $2,922/mo",
+  budgetBedrooms:1,
   specs:[{t:"Studio–2 bd",hot:false},{t:"Loft-style",hot:true},{t:"Rooftop",hot:false},{t:"Avail NOW",hot:true}],
   caption:"L Seven, SoMa 🌇 Floor-to-ceiling windows, open loft-style plans + arguably the best rooftop in the neighborhood. Studios start under $3k.",
   features:"✔︎ Open loft-style layouts, big glass\n✔︎ Rooftop deck + grills + gym\n✔︎ Studios from $2,922 (great value)\n✔︎ Across from SoMa Costco / Trader Joe's",
@@ -1052,7 +1077,7 @@ const COMPACT=[
 ];
 const DEAD=["missionbay.2br","bush.stylish","bonus.2br","sf.3bed2bath","188.octavia","3345.fillmore"];
 const UNCONF=["1660.sacramento","3509.mission","1354.palou","224.cordova","1450.pacheco","2726.sanbruno","848.girard","1566.newcomb","247.20th","346.monticello"];
-const ALL=APTS.concat(COMPACT.map(expand)).filter(a=>!DEAD.includes(a.handle));
+const ALL=APTS.concat(COMPACT.map(expand)).filter(a=>!DEAD.includes(a.handle)).filter(withinBedroomBudget);
 ALL.forEach((a,i)=>{a.rank="#"+(i+1)+" of "+ALL.length+(i===0?" · BEST VALUE":"");a.vstat=a.vstat||(UNCONF.includes(a.handle)?"unconf":"ok");});
 
 const feed=document.getElementById('feed');
