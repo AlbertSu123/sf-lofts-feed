@@ -1,7 +1,8 @@
-(() => {
+(async () => {
   const housingPattern = /\$|rent|lease|sublet|sublease|takeover|bed|bd|br|loft|apartment|office|den|room/i;
   const groupHousingPattern = /housing|apartment|apartments|apt\b|room|roommate|roommates|sublet|sublease|lease|rent|rental|loft|live.?work/i;
   const linkPattern = /facebook\.com\/(groups|marketplace|permalink|posts|share|photo)/i;
+  const expandPattern = /^(see|show|view)\s+more|more$/i;
   const clean = value => String(value || "").replace(/\n{3,}/g, "\n\n").trim();
   const fileSlug = value => String(value || "facebook")
     .toLowerCase()
@@ -13,6 +14,27 @@
     const match = String(href || "").match(/facebook\.com\/groups\/([^/?#]+)/i);
     return match ? `https://www.facebook.com/groups/${match[1]}` : "";
   };
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  async function expandVisibleText() {
+    const buttons = Array.from(document.querySelectorAll('[role="button"], button, span, a'))
+      .filter(el => {
+        const text = clean(el.innerText || el.textContent);
+        if (!expandPattern.test(text)) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      })
+      .slice(0, 80);
+    for (const button of buttons) {
+      try {
+        button.click();
+      } catch {
+        // Ignore controls Facebook refuses to click from a bookmarklet.
+      }
+    }
+    if (buttons.length) await wait(600);
+    return buttons.length;
+  }
+  const expandedControls = await expandVisibleText();
   function downloadPayload(payload) {
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -73,6 +95,7 @@
       links,
       images,
       sourceKind: links.some(href => /\/marketplace\//i.test(href)) || /\/marketplace\//i.test(location.href) ? "marketplace" : "post",
+      expandedControls,
       text
     });
   }
@@ -102,14 +125,15 @@
     pageTitle: document.title,
     pageUrl: location.href,
     posts,
-    groups: Array.from(groups.values())
+    groups: Array.from(groups.values()),
+    expandedControls
   }, null, 2);
   const filename = downloadPayload(payload);
   navigator.clipboard.writeText(payload).then(
-    () => alert(`Downloaded ${filename} and copied ${posts.length} housing-like posts plus ${groups.size} visible groups to clipboard.`),
+    () => alert(`Downloaded ${filename} and copied ${posts.length} housing-like posts plus ${groups.size} visible groups to clipboard. Expanded ${expandedControls} visible controls first.`),
     () => {
       console.log(payload);
-      alert(`Downloaded ${filename}. Clipboard write failed, but ${posts.length} posts and ${groups.size} groups were printed to the console.`);
+      alert(`Downloaded ${filename}. Clipboard write failed, but ${posts.length} posts and ${groups.size} groups were printed to the console. Expanded ${expandedControls} visible controls first.`);
     }
   );
 })();
