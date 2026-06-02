@@ -670,7 +670,7 @@ function normalizeCapturePayload(raw) {
   try {
     const parsed = JSON.parse(text);
     const rows = Array.isArray(parsed) ? parsed : parsed.posts || parsed.items || [parsed];
-    return rows.map((row, i) => ({
+    const posts = rows.map((row, i) => ({
       capturedAt: row.capturedAt || new Date().toISOString(),
       pageTitle: row.pageTitle || row.group || "",
       pageUrl: row.pageUrl || "",
@@ -680,6 +680,8 @@ function normalizeCapturePayload(raw) {
       sourceKind: row.sourceKind || "",
       text: cleanText(row.text || row.body || row.content || "")
     })).filter(row => row.text);
+    const marker = Array.isArray(parsed) ? null : captureMarkerRow(parsed);
+    return marker ? [marker, ...posts] : posts;
   } catch {
     return [{
       capturedAt: new Date().toISOString(),
@@ -692,6 +694,26 @@ function normalizeCapturePayload(raw) {
       text: cleanText(text)
     }];
   }
+}
+
+function captureMarkerRow(payload) {
+  const pageUrl = payload?.pageUrl || payload?.url || "";
+  const groupUrl = /facebook\.com\/groups\//i.test(String(pageUrl)) ? canonicalGroupUrl(pageUrl) : "";
+  if (!groupUrl) return null;
+  return {
+    capturedAt: payload.capturedAt || new Date().toISOString(),
+    pageTitle: payload.pageTitle || payload.group || "",
+    pageUrl: groupUrl,
+    url: groupUrl,
+    links: [groupUrl],
+    images: [],
+    sourceKind: "capture-marker",
+    text: ""
+  };
+}
+
+function isCaptureMarker(row) {
+  return row?.sourceKind === "capture-marker";
 }
 
 function extractGroupUrls(text) {
@@ -947,7 +969,7 @@ function writeInboxRows(rows, opts) {
   fs.writeFileSync(out, JSON.stringify(rows, null, 2) + "\n");
   return {
     saved: path.relative(ROOT, out),
-    posts: rows.length,
+    posts: rows.filter(row => !isCaptureMarker(row)).length,
     sourceName: name
   };
 }
@@ -990,10 +1012,11 @@ function runDownloads(opts = {}) {
     }
 
     const rows = normalizeCapturePayload(raw);
+    const postRows = rows.filter(row => !isCaptureMarker(row));
     const record = {
       file: path.relative(downloadsDir, file),
       hash,
-      posts: rows.length,
+      posts: postRows.length,
       inbox: null,
       groups: null
     };
@@ -1002,7 +1025,7 @@ function runDownloads(opts = {}) {
         ...opts,
         name: opts.name || path.basename(file, ".json")
       });
-      postCount += rows.length;
+      postCount += postRows.length;
     }
     if (opts.groups) {
       const entries = extractGroupEntries(raw, opts);
@@ -1064,6 +1087,40 @@ function postGroupUrl(post) {
   return "";
 }
 
+function normalizeCoveragePost(item, file) {
+  if (isCaptureMarker(item)) {
+    return {
+      file,
+      capturedAt: item.capturedAt || null,
+      pageTitle: item.pageTitle || "",
+      pageUrl: item.pageUrl || item.url || "",
+      url: item.url || item.pageUrl || "",
+      links: Array.isArray(item.links) ? item.links : [],
+      images: [],
+      sourceKind: "capture-marker",
+      text: ""
+    };
+  }
+  return normalizePost(item, file);
+}
+
+function parseCoverageFile(file) {
+  const raw = fs.readFileSync(file, "utf8").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    const rows = Array.isArray(parsed) ? parsed : parsed.posts || parsed.items || [];
+    const posts = rows.map(item => normalizeCoveragePost(item, file)).filter(Boolean);
+    if (!Array.isArray(parsed)) {
+      const marker = captureMarkerRow(parsed);
+      if (marker) posts.push(normalizeCoveragePost(marker, file));
+    }
+    return posts;
+  } catch {
+    return parseCaptureFile(file);
+  }
+}
+
 function groupCaptureCoverage(config = loadConfig(), opts = {}) {
   const staleHours = Number(opts["stale-hours"] || opts.staleHours || 24);
   const parsedNow = opts.now ? Date.parse(opts.now) : NaN;
@@ -1084,15 +1141,29 @@ function groupCaptureCoverage(config = loadConfig(), opts = {}) {
   }]));
 
   for (const file of inboxFiles(opts.inbox)) {
-    for (const post of parseCaptureFile(file)) {
+    const groupsInFile = new Map();
+    for (const post of parseCoverageFile(file)) {
       const groupUrl = postGroupUrl(post);
       const row = byUrl.get(groupUrl);
       if (!row) continue;
-      row.captureCount += 1;
       const capturedAt = captureTimestamp(post, file);
-      if (capturedAt && (!row.lastCapturedAt || Date.parse(capturedAt) > Date.parse(row.lastCapturedAt))) {
-        row.lastCapturedAt = capturedAt;
-        row.lastSourceFile = path.relative(ROOT, file);
+      const previous = groupsInFile.get(groupUrl);
+      if (!previous || (capturedAt && (!previous.capturedAt || Date.parse(capturedAt) > Date.parse(previous.capturedAt)))) {
+        groupsInFile.set(groupUrl, {
+          capturedAt,
+          sourceFile: path.relative(ROOT, file)
+        });
+      }
+    }
+    for (const [groupUrl, capture] of groupsInFile) {
+      const row = byUrl.get(groupUrl);
+      row.captureCount += 1;
+      if (capture.capturedAt && (!row.lastCapturedAt || Date.parse(capture.capturedAt) > Date.parse(row.lastCapturedAt))) {
+        row.lastCapturedAt = capture.capturedAt;
+        row.lastSourceFile = capture.sourceFile;
+      } else if (!row.lastSourceFile) {
+        row.lastCapturedAt = capture.capturedAt || null;
+        row.lastSourceFile = capture.sourceFile;
       }
     }
   }
