@@ -74,7 +74,8 @@ function usage() {
   console.log(`Usage:
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
   node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24]
-  node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--existing index.html]
+  node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
+  node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
   node scripts/facebook-monitor.mjs publish <candidates.json> --select <handle-or-hash,...> [--apply] [--index index.html]
 
 Raw captures and generated candidates are ignored by git. Review and verify before publishing any private-group lead.`);
@@ -226,6 +227,29 @@ function escapeHtml(value) {
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function generateBookmarklet(opts) {
+  const source = fs.readFileSync(outputPath("monitoring/facebook-capture-snippet.js"), "utf8").trim();
+  const href = `javascript:${encodeURIComponent(source)}`;
+  const out = opts.out || "monitoring/facebook-capture-bookmarklet.html";
+  const html = `<!doctype html>
+<meta charset="utf-8">
+<title>Facebook Housing Capture Bookmarklet</title>
+<style>
+body{font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5;margin:28px;max-width:880px;color:#111}
+a.bookmarklet{display:inline-block;background:#0866ff;color:white;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:8px}
+textarea{width:100%;height:150px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+</style>
+<h1>Facebook Housing Capture Bookmarklet</h1>
+<p>Drag this button to the browser bookmarks bar. On a Facebook group search, post search, or Marketplace results page, click it to copy housing-like visible posts as JSON.</p>
+<p><a class="bookmarklet" href="${href}">Capture FB Housing</a></p>
+<p>If dragging does not work, create a new bookmark named <code>Capture FB Housing</code> and paste this URL:</p>
+<textarea readonly>${escapeHtml(href)}</textarea>
+`;
+  fs.writeFileSync(outputPath(out), html);
+  console.log(JSON.stringify({ out, bytes: html.length }, null, 2));
 }
 
 function escapeMd(value) {
@@ -489,16 +513,21 @@ function generateSnippet(c) {
 function runScore(files, opts) {
   const config = loadConfig();
   const existing = loadExisting(opts.existing);
+  const statePath = opts.state ? outputPath(opts.state) : null;
+  const state = statePath ? readJsonIfExists(statePath, { seenHashes: [] }) : { seenHashes: [] };
+  const seenBefore = new Set(state.seenHashes || []);
   const posts = files.flatMap(parseCaptureFile);
   const seen = new Set();
-  const candidates = posts
+  let candidates = posts
     .map(post => scorePost(post, config, existing))
+    .map(c => ({ ...c, seenBefore: seenBefore.has(c.textHash) }))
     .filter(c => {
       if (seen.has(c.textHash)) return false;
       seen.add(c.textHash);
       return true;
     })
     .sort((a, b) => b.score - a.score);
+  if (opts["new-only"]) candidates = candidates.filter(c => !c.seenBefore);
 
   const outPath = opts.out ? outputPath(opts.out) : null;
   if (outPath) fs.writeFileSync(outPath, JSON.stringify(candidates, null, 2) + "\n");
@@ -527,14 +556,25 @@ function runScore(files, opts) {
   console.log(JSON.stringify({
     scannedPosts: posts.length,
     candidates: candidates.length,
+    seenBefore: candidates.filter(c => c.seenBefore).length,
     pass: candidates.filter(c => c.status === "pass").length,
     verify: candidates.filter(c => c.status === "verify").length,
     rejected: candidates.filter(c => c.status === "reject").length,
     duplicate: candidates.filter(c => c.status === "duplicate").length,
     out: opts.out || null,
     snippets: opts.snippets || null,
+    state: opts.state || null,
+    stateUpdated: Boolean(opts["update-state"] && statePath),
     top
   }, null, 2));
+
+  if (opts["update-state"] && statePath) {
+    const next = {
+      updatedAt: new Date().toISOString(),
+      seenHashes: [...new Set([...(state.seenHashes || []), ...posts.map(post => crypto.createHash("sha1").update(post.text).digest("hex"))])].sort()
+    };
+    fs.writeFileSync(statePath, JSON.stringify(next, null, 2) + "\n");
+  }
 }
 
 function selectCandidates(candidates, select) {
@@ -603,6 +643,8 @@ if (!cmd || cmd === "help") {
   writeSearches(generateSearches(loadConfig()), opts);
 } else if (cmd === "watch") {
   generateWatchBatch(loadConfig(), opts);
+} else if (cmd === "bookmarklet") {
+  generateBookmarklet(opts);
 } else if (cmd === "score") {
   if (!args.length) {
     usage();
