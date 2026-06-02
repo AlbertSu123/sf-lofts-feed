@@ -58,7 +58,7 @@ Check which configured groups have not produced a recent capture:
 node scripts/facebook-monitor.mjs coverage --stale-hours 24
 ```
 
-The full loop also refreshes `monitoring/facebook-coverage.html` and `monitoring/facebook-coverage.md`, which show every configured group, freshness status, last capture time, capture count, and one-click group/search links. The HTML coverage page includes copy buttons for common `group-status` commands, so you can quickly mark groups as joined, pending, noisy, inaccessible, or skipped after checking them.
+The full loop also refreshes `monitoring/facebook-coverage.html` and `monitoring/facebook-coverage.md`, which show every configured group, freshness status, last capture time, capture count, listing-post yield, pass/verify yield, and one-click group/search links. The HTML coverage page includes copy buttons for common `group-status` commands, so you can quickly mark groups as joined, pending, noisy, inaccessible, or skipped after checking them.
 
 After opening a group, record access/quality locally so the watch queue gets sharper over time:
 

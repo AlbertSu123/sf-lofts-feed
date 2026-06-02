@@ -1087,6 +1087,42 @@ function postGroupUrl(post) {
   return "";
 }
 
+function zeroYieldStats() {
+  return {
+    listingPosts: 0,
+    candidates: 0,
+    passVerifyCandidates: 0,
+    rejectedCandidates: 0,
+    duplicateCandidates: 0,
+    overBudgetCandidates: 0
+  };
+}
+
+function groupYieldStats(config = loadConfig(), opts = {}) {
+  const groups = config.facebook.groups || [];
+  const byUrl = new Map(groups.map(group => [group.url, zeroYieldStats()]));
+  for (const file of inboxFiles(opts.inbox)) {
+    for (const post of parseCaptureFile(file)) {
+      const row = byUrl.get(postGroupUrl(post));
+      if (row) row.listingPosts += 1;
+    }
+  }
+
+  const candidatesFile = opts.candidates || opts.out || DEFAULT_CANDIDATES_PATH;
+  const candidatesPath = outputPath(candidatesFile);
+  const candidates = fs.existsSync(candidatesPath) ? readJson(candidatesPath) : [];
+  for (const candidate of candidates) {
+    const row = byUrl.get(postGroupUrl(candidate));
+    if (!row) continue;
+    row.candidates += 1;
+    if (candidate.status === "pass" || candidate.status === "verify") row.passVerifyCandidates += 1;
+    if (candidate.status === "reject") row.rejectedCandidates += 1;
+    if (candidate.status === "duplicate") row.duplicateCandidates += 1;
+    if (isKnownOverBudget(candidate, config)) row.overBudgetCandidates += 1;
+  }
+  return byUrl;
+}
+
 function normalizeCoveragePost(item, file) {
   if (isCaptureMarker(item)) {
     return {
@@ -1126,6 +1162,7 @@ function groupCaptureCoverage(config = loadConfig(), opts = {}) {
   const parsedNow = opts.now ? Date.parse(opts.now) : NaN;
   const now = Number.isFinite(parsedNow) ? parsedNow : Date.now();
   const groups = config.facebook.groups || [];
+  const yieldByUrl = groupYieldStats(config, opts);
   const byUrl = new Map(groups.map(group => [group.url, {
     name: group.name,
     url: group.url,
@@ -1137,7 +1174,9 @@ function groupCaptureCoverage(config = loadConfig(), opts = {}) {
     accessCheckedAt: group.accessCheckedAt || "",
     captureCount: 0,
     lastCapturedAt: null,
-    lastSourceFile: null
+    lastSourceFile: null,
+    ...zeroYieldStats(),
+    ...(yieldByUrl.get(group.url) || {})
   }]));
 
   for (const file of inboxFiles(opts.inbox)) {
@@ -1191,6 +1230,12 @@ function groupCaptureCoverage(config = loadConfig(), opts = {}) {
     neverCapturedGroups: rows.filter(row => row.status === "never").length,
     watchedGroups: rows.filter(row => row.watch).length,
     skippedGroups: rows.filter(row => !row.watch).length,
+    listingPosts: rows.reduce((sum, row) => sum + row.listingPosts, 0),
+    candidates: rows.reduce((sum, row) => sum + row.candidates, 0),
+    passVerifyCandidates: rows.reduce((sum, row) => sum + row.passVerifyCandidates, 0),
+    rejectedCandidates: rows.reduce((sum, row) => sum + row.rejectedCandidates, 0),
+    duplicateCandidates: rows.reduce((sum, row) => sum + row.duplicateCandidates, 0),
+    overBudgetCandidates: rows.reduce((sum, row) => sum + row.overBudgetCandidates, 0),
     groups: rows
   };
 }
@@ -1198,6 +1243,10 @@ function groupCaptureCoverage(config = loadConfig(), opts = {}) {
 function coverageSearchUrl(row, config) {
   const term = (config.facebook.searchTerms || [])[0] || "San Francisco housing";
   return groupSearchUrl(row.url, term);
+}
+
+function yieldLabel(row) {
+  return `${row.passVerifyCandidates || 0}/${row.listingPosts || 0}`;
 }
 
 function groupStatusCommand(row, status, opts = {}) {
@@ -1256,9 +1305,9 @@ function generateGroupWatchBatch(config, opts = {}) {
     "4. If a group is inaccessible, noisy, or pending, record it with `group-status` so future sweeps get sharper.",
     "5. Run `node scripts/facebook-monitor.mjs run --open-review` to import downloads, score leads, and refresh the next sweep.",
     "",
-    "| Freshness | Access | Priority | Group | Last captured | Age | Group | Core search | Notes |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-    ...rows.map(row => `| ${escapeMd(row.status)} | ${escapeMd(row.accessStatus)} | ${escapeMd(row.priority)} | ${escapeMd(row.name)} | ${escapeMd(lastLabel(row))} | ${escapeMd(ageLabel(row))} | [group](${row.url}) | [search](${coverageSearchUrl(row, config)}) | ${escapeMd(notesLabel(row))} |`)
+    "| Freshness | Access | Priority | Yield | Group | Last captured | Age | Group | Core search | Notes |",
+    "| --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |",
+    ...rows.map(row => `| ${escapeMd(row.status)} | ${escapeMd(row.accessStatus)} | ${escapeMd(row.priority)} | ${escapeMd(yieldLabel(row))} | ${escapeMd(row.name)} | ${escapeMd(lastLabel(row))} | ${escapeMd(ageLabel(row))} | [group](${row.url}) | [search](${coverageSearchUrl(row, config)}) | ${escapeMd(notesLabel(row))} |`)
   ].join("\n") + "\n";
   fs.writeFileSync(outputPath(mdOut), md);
 
@@ -1299,9 +1348,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   </div>
 </section>
 <table>
-<thead><tr><th class="check">Done</th><th>Freshness</th><th>Access</th><th>Priority</th><th>Group</th><th>Last captured</th><th>Age</th><th>Links</th><th>Notes</th><th>Curation</th></tr></thead>
+<thead><tr><th class="check">Done</th><th>Freshness</th><th>Access</th><th>Priority</th><th>Yield</th><th>Group</th><th>Last captured</th><th>Age</th><th>Links</th><th>Notes</th><th>Curation</th></tr></thead>
 <tbody>
-${rows.map((row, i) => `<tr class="${escapeHtml(row.status)}" data-url="${escapeHtml(row.url)}"><td class="check"><input type="checkbox" data-done="${i}"></td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.accessStatus)}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td><td>${escapeHtml(notesLabel(row))}</td><td class="actions">${groupStatusActions(row)}</td></tr>`).join("\n")}
+${rows.map((row, i) => `<tr class="${escapeHtml(row.status)}" data-url="${escapeHtml(row.url)}"><td class="check"><input type="checkbox" data-done="${i}"></td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.accessStatus)}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(yieldLabel(row))}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td><td>${escapeHtml(notesLabel(row))}</td><td class="actions">${groupStatusActions(row)}</td></tr>`).join("\n")}
 </tbody>
 </table>
 <script>
@@ -1405,14 +1454,17 @@ function coverageFiles(config, coverage, opts = {}) {
     `- Fresh groups: ${coverage.freshGroups}`,
     `- Stale groups: ${coverage.staleGroups}`,
     `- Never captured groups: ${coverage.neverCapturedGroups}`,
+    `- Listing-like posts: ${coverage.listingPosts}`,
+    `- Pass/verify candidates: ${coverage.passVerifyCandidates}`,
+    `- Rejected/duplicate candidates: ${coverage.rejectedCandidates + coverage.duplicateCandidates}`,
     "",
     "## Groups",
     "",
-    "| Freshness | Access | Watch | Priority | Group | Captures | Last captured | Age | Source | Notes | Links |",
-    "| --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- |",
+    "| Freshness | Access | Watch | Priority | Group | Captures | Posts | Pass/verify | Reject/dup | Last captured | Age | Source | Notes | Links |",
+    "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |",
     ...coverage.groups.map(row => {
       const links = `[group](${row.url}) · [search](${coverageSearchUrl(row, config)})`;
-      return `| ${escapeMd(row.status)} | ${escapeMd(row.accessStatus)} | ${row.watch ? "yes" : "no"} | ${escapeMd(row.priority)} | ${escapeMd(row.name)} | ${row.captureCount} | ${escapeMd(lastLabel(row))} | ${escapeMd(ageLabel(row))} | ${escapeMd(sourceLabel(row))} | ${escapeMd(notesLabel(row))} | ${links} |`;
+      return `| ${escapeMd(row.status)} | ${escapeMd(row.accessStatus)} | ${row.watch ? "yes" : "no"} | ${escapeMd(row.priority)} | ${escapeMd(row.name)} | ${row.captureCount} | ${row.listingPosts} | ${row.passVerifyCandidates} | ${row.rejectedCandidates + row.duplicateCandidates} | ${escapeMd(lastLabel(row))} | ${escapeMd(ageLabel(row))} | ${escapeMd(sourceLabel(row))} | ${escapeMd(notesLabel(row))} | ${links} |`;
     })
   ].join("\n") + "\n";
   fs.writeFileSync(outputPath(mdOut), md);
@@ -1436,11 +1488,14 @@ table{border-collapse:collapse;width:100%;max-width:1220px;background:#fff}td,th
   <span class="pill">${coverage.freshGroups} fresh</span>
   <span class="pill">${coverage.staleGroups} stale</span>
   <span class="pill">${coverage.neverCapturedGroups} never captured</span>
+  <span class="pill">${coverage.listingPosts} listing posts</span>
+  <span class="pill">${coverage.passVerifyCandidates} pass/verify</span>
+  <span class="pill">${coverage.rejectedCandidates + coverage.duplicateCandidates} reject/dup</span>
 </section>
 <table>
-<thead><tr><th>Freshness</th><th>Access</th><th>Watch</th><th>Priority</th><th>Group</th><th>Captures</th><th>Last captured</th><th>Age</th><th>Source</th><th>Notes</th><th>Links</th><th>Curation</th></tr></thead>
+<thead><tr><th>Freshness</th><th>Access</th><th>Watch</th><th>Priority</th><th>Group</th><th>Captures</th><th>Posts</th><th>Pass/verify</th><th>Reject/dup</th><th>Last captured</th><th>Age</th><th>Source</th><th>Notes</th><th>Links</th><th>Curation</th></tr></thead>
 <tbody>
-${coverage.groups.map(row => `<tr class="${escapeHtml(row.status)}"><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.accessStatus)}</td><td>${row.watch ? "yes" : "no"}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(row.name)}</td><td>${row.captureCount}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td>${escapeHtml(sourceLabel(row))}</td><td>${escapeHtml(notesLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td><td class="actions">${groupStatusActions(row)}</td></tr>`).join("\n")}
+${coverage.groups.map(row => `<tr class="${escapeHtml(row.status)}"><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.accessStatus)}</td><td>${row.watch ? "yes" : "no"}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(row.name)}</td><td>${row.captureCount}</td><td>${row.listingPosts}</td><td>${row.passVerifyCandidates}</td><td>${row.rejectedCandidates + row.duplicateCandidates}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td>${escapeHtml(sourceLabel(row))}</td><td>${escapeHtml(notesLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td><td class="actions">${groupStatusActions(row)}</td></tr>`).join("\n")}
 </tbody>
 </table>
 <script>
@@ -1563,6 +1618,11 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
       freshGroups: coverage.freshGroups,
       staleGroups: coverage.staleGroups,
       neverCapturedGroups: coverage.neverCapturedGroups,
+      listingPosts: coverage.listingPosts,
+      passVerifyCandidates: coverage.passVerifyCandidates,
+      rejectedCandidates: coverage.rejectedCandidates,
+      duplicateCandidates: coverage.duplicateCandidates,
+      overBudgetCandidates: coverage.overBudgetCandidates,
       needsCapture: coverage.groups.filter(group => group.status !== "fresh").slice(0, 12)
     },
     cadenceHours: config.facebook.scanCadenceHours || 6,
@@ -1895,6 +1955,15 @@ function runNext(opts) {
         `- ${group.status}: ${group.name} (${group.priority})${group.lastCapturedAt ? ` · last ${group.lastCapturedAt}` : ""}`
       )
       : ["- All configured groups are fresh."];
+  const yieldLines = coverage.groups
+    .filter(group => group.listingPosts || group.passVerifyCandidates || group.candidates)
+    .sort((a, b) =>
+      b.passVerifyCandidates - a.passVerifyCandidates ||
+      b.listingPosts - a.listingPosts ||
+      a.name.localeCompare(b.name)
+    )
+    .slice(0, 12)
+    .map(group => `- ${group.name}: ${group.passVerifyCandidates} pass/verify from ${group.listingPosts} listing-like posts (${group.candidates} scored)`);
   const md = [
     "# Facebook Housing Monitor Next Run",
     "",
@@ -1934,8 +2003,15 @@ function runNext(opts) {
     `Stale groups: ${coverage.staleGroups}`,
     `Never captured groups: ${coverage.neverCapturedGroups}`,
     `Stale threshold: ${coverage.staleHours} hours`,
+    `Listing-like posts: ${coverage.listingPosts}`,
+    `Pass/verify candidates: ${coverage.passVerifyCandidates}`,
+    `Rejected/duplicate candidates: ${coverage.rejectedCandidates + coverage.duplicateCandidates}`,
     "",
     ...freshnessLines,
+    "",
+    "## Group Yield",
+    "",
+    ...(yieldLines.length ? yieldLines : ["- No listing-like posts have been captured from configured groups yet."]),
     "",
     "## Files",
     "",
@@ -1993,7 +2069,12 @@ function runNext(opts) {
     groupCoverage: {
       freshGroups: coverage.freshGroups,
       staleGroups: coverage.staleGroups,
-      neverCapturedGroups: coverage.neverCapturedGroups
+      neverCapturedGroups: coverage.neverCapturedGroups,
+      listingPosts: coverage.listingPosts,
+      passVerifyCandidates: coverage.passVerifyCandidates,
+      rejectedCandidates: coverage.rejectedCandidates,
+      duplicateCandidates: coverage.duplicateCandidates,
+      overBudgetCandidates: coverage.overBudgetCandidates
     },
     opened: Boolean(opts.open),
     openedGroupWatch: Boolean(opts["open-group-watch"]),
