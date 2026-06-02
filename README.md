@@ -157,7 +157,7 @@ node scripts/facebook-monitor.mjs score monitoring/facebook-inbox/*.json --out m
 open monitoring/facebook-review.html
 ```
 
-11. Review candidates. To preview an app-ready card for a selected handle or hash:
+11. Review candidates. The review page buckets leads into ready, verify, missing-info, shared-room, and skip queues; each candidate has a `Copy inquiry` button for quickly asking the poster to confirm availability, rent, bedroom count, move-in cash, address, and poster role. To preview an app-ready card for a selected handle or hash:
 
 ```sh
 node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash>

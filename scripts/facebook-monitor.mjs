@@ -633,6 +633,10 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/\n/g, "&#10;");
+}
+
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
@@ -2562,6 +2566,54 @@ function triageCandidates(candidates, config) {
   return buckets;
 }
 
+function triageBucketLabel(bucket) {
+  return ({
+    ready: "ready",
+    worthVerifying: "verify",
+    needsPrice: "needs price",
+    needsBedrooms: "needs beds",
+    needsSource: "needs source",
+    sharedRooms: "shared room",
+    manualReview: "manual review",
+    overBudget: "over budget",
+    rejected: "rejected",
+    duplicates: "duplicate"
+  })[bucket] || bucket;
+}
+
+function candidateInquiryMessage(c, config) {
+  const details = [
+    c.bedrooms ? `${c.bedrooms} bedroom` : "the listing",
+    c.price ? priceLabel(c.price) : "price TBD",
+    c.location || "San Francisco"
+  ].filter(Boolean).join(" · ");
+  const questions = [
+    "Is it still available, and when could I tour it?",
+    "What is the exact monthly rent, lease term, and total move-in cash due?",
+    "What is the exact address or nearest cross streets?",
+    "Are you the owner, manager, current tenant, or agent?"
+  ];
+  if (!c.price || c.pricePerBedroom === null || c.pricePerBedroom === undefined) {
+    questions.unshift(`Can you confirm the rent is at or below $${config.criteria.maxPricePerBedroom.toLocaleString()}/bedroom?`);
+  }
+  if (!c.budgetBedrooms) {
+    questions.unshift("How many bedrooms are included in the unit?");
+  }
+  if (c.shared) {
+    questions.push("Is this a private room/shared apartment, or the full unit?");
+  }
+  if (c.signals.length) {
+    questions.push(`Can you confirm these features: ${c.signals.slice(0, 4).join(", ")}?`);
+  }
+  return [
+    `Hi, I saw your ${details} post and am interested.`,
+    "",
+    ...questions.map(question => `- ${question}`),
+    "",
+    "Thanks."
+  ].join("\n");
+}
+
 function digestTable(candidates, config, limit = 12) {
   if (!candidates.length) return "_None right now._";
   const rows = candidates.slice(0, limit).map(c => [
@@ -2698,20 +2750,32 @@ result = {
 }
 
 function generateReviewHtml(candidates, opts) {
+  const config = loadConfig(opts);
   const out = opts.review || "monitoring/facebook-review.html";
   const generatedAt = new Date().toISOString();
   const candidateFile = opts.out || DEFAULT_CANDIDATES_PATH;
   const digestHref = opts.digest
     ? path.relative(path.dirname(outputPath(out)), outputPath(opts.digest)).replace(/\\/g, "/")
     : null;
+  const buckets = triageCandidates(candidates, config);
+  const bucketOrder = ["ready", "worthVerifying", "needsPrice", "needsBedrooms", "needsSource", "sharedRooms", "manualReview", "overBudget", "rejected", "duplicates"];
+  const filterButtons = [
+    `<button type="button" class="filter active" data-filter="all">All ${candidates.length}</button>`,
+    ...bucketOrder
+      .filter(bucket => buckets[bucket]?.length)
+      .map(bucket => `<button type="button" class="filter" data-filter="${escapeHtml(bucket)}">${escapeHtml(triageBucketLabel(bucket))} ${buckets[bucket].length}</button>`)
+  ].join("\n  ");
   const rows = candidates.map(c => {
     const shortHash = candidateShortHash(c);
     const publishable = isPublishable(c);
+    const bucket = primaryTriageBucket(c, config);
     const publishCommand = `node scripts/facebook-monitor.mjs publish ${candidateFile} --select ${shortHash}`;
-    return `<article class="card ${escapeHtml(c.status)}">
+    const inquiryMessage = candidateInquiryMessage(c, config);
+    return `<article class="card ${escapeHtml(c.status)} bucket-${escapeHtml(bucket)}" data-status="${escapeHtml(c.status)}" data-bucket="${escapeHtml(bucket)}">
   <header>
     ${publishable ? `<label class="pick"><input type="checkbox" data-hash="${escapeHtml(shortHash)}"> select</label>` : ""}
     <strong>${escapeHtml(c.status.toUpperCase())}</strong>
+    <span class="bucket">${escapeHtml(triageBucketLabel(bucket))}</span>
     <span>score ${escapeHtml(c.score)}</span>
     <span>${escapeHtml(priceLabel(c.price))}</span>
     <span>${escapeHtml(ppbLabel(c.pricePerBedroom))}</span>
@@ -2725,7 +2789,7 @@ function generateReviewHtml(candidates, opts) {
     <dt>Signals</dt><dd>${escapeHtml(c.signals.join(", ") || "none")}</dd>
     <dt>Seen Before</dt><dd>${c.seenBefore ? "yes" : "no"}</dd>
   </dl>
-  <p class="actions">${c.url ? `<a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">open lead</a>` : ""}${c.pageUrl ? `<a href="${escapeHtml(c.pageUrl)}" target="_blank" rel="noopener">source page</a>` : ""}</p>
+  <p class="actions">${c.url ? `<a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">open lead</a>` : ""}${c.pageUrl ? `<a href="${escapeHtml(c.pageUrl)}" target="_blank" rel="noopener">source page</a>` : ""}<button type="button" data-copy-message="${escapeAttr(inquiryMessage)}">Copy inquiry</button></p>
   <label>Publish command</label>
   <input readonly value="${escapeHtml(publishCommand)}">
 </article>`;
@@ -2737,16 +2801,21 @@ function generateReviewHtml(candidates, opts) {
 body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:24px;color:#111;background:#f7f7f7}
 h1{margin:0 0 4px}.meta{color:#555;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
 .toolbar{position:sticky;top:0;z-index:2;background:#ffffffe8;border:1px solid #ddd;border-radius:8px;padding:10px;margin:0 0 16px;box-shadow:0 2px 8px #0001;display:grid;grid-template-columns:auto auto auto 1fr auto;gap:8px;align-items:center;backdrop-filter:blur(8px)}
-.toolbar button{border:1px solid #bbb;background:#fff;border-radius:6px;padding:7px 10px;cursor:pointer}.toolbar label{color:#555}.toolbar a.digest{color:#06c;white-space:nowrap}
+.filters{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}.toolbar button,.actions button{border:1px solid #bbb;background:#fff;border-radius:6px;padding:7px 10px;cursor:pointer}.toolbar button.active{background:#111;color:#fff;border-color:#111}.toolbar label{color:#555}.toolbar a.digest{color:#06c;white-space:nowrap}
 .card{background:white;border:1px solid #ddd;border-left:7px solid #999;border-radius:8px;padding:14px;box-shadow:0 1px 3px #0001}
 .pass{border-left-color:#179b55}.verify{border-left-color:#c47f17}.reject{opacity:.72;border-left-color:#cc3333}.duplicate{opacity:.65;border-left-color:#777}
-header{display:flex;flex-wrap:wrap;gap:8px;color:#555}.pick{color:#111;font-weight:600}header strong{color:#111}h2{font-size:17px;margin:10px 0 8px}p{line-height:1.45}dl{display:grid;grid-template-columns:90px 1fr;gap:5px;margin:12px 0}dt{color:#666}dd{margin:0}code,input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}input{width:100%;padding:7px;border:1px solid #ccc;border-radius:5px}.actions{display:flex;gap:10px}.actions a{color:#06c}
+header{display:flex;flex-wrap:wrap;gap:8px;color:#555}.pick{color:#111;font-weight:600}header strong{color:#111}.bucket{background:#eef1f4;border:1px solid #d8dde3;border-radius:999px;padding:1px 7px;color:#333}h2{font-size:17px;margin:10px 0 8px}p{line-height:1.45}dl{display:grid;grid-template-columns:90px 1fr;gap:5px;margin:12px 0}dt{color:#666}dd{margin:0}code,input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}input{width:100%;padding:7px;border:1px solid #ccc;border-radius:5px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.actions a{color:#06c}.actions button.copied{background:#eaf7ed;border-color:#9bc69f}
+.hidden{display:none}
 @media(max-width:720px){.toolbar{grid-template-columns:1fr 1fr}.toolbar input,.toolbar label{grid-column:1/-1}}
 </style>
 <h1>Facebook Housing Candidate Review</h1>
 <div class="meta">Generated ${escapeHtml(generatedAt)} · ${candidates.length} candidates</div>
 <section class="toolbar">
+  <div class="filters">
+  ${filterButtons}
+  </div>
   <button type="button" id="selectPass">Select pass</button>
+  <button type="button" id="selectVisible">Select visible</button>
   <button type="button" id="clearPicks">Clear</button>
   <span id="pickedCount">0 selected</span>
   <label>Batch publish command</label>
@@ -2760,6 +2829,7 @@ ${rows || "<p>No candidates yet. Open the watch batch while logged into Facebook
 <script>
 const candidateFile=${js(candidateFile)};
 const picks=[...document.querySelectorAll('input[data-hash]')];
+const cards=[...document.querySelectorAll('.card')];
 const count=document.getElementById('pickedCount');
 const batch=document.getElementById('batchCommand');
 function updateBatch(){
@@ -2768,9 +2838,26 @@ function updateBatch(){
   batch.value=selected.length ? "node scripts/facebook-monitor.mjs publish "+candidateFile+" --select "+selected.join(",") : "";
 }
 picks.forEach(p=>p.addEventListener('change',updateBatch));
+document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{
+  const filter=button.dataset.filter;
+  document.querySelectorAll('[data-filter]').forEach(item=>item.classList.toggle('active',item===button));
+  cards.forEach(card=>card.classList.toggle('hidden',filter!=='all' && card.dataset.bucket!==filter));
+}));
 document.getElementById('selectPass').addEventListener('click',()=>{picks.forEach(p=>{if(p.closest('.pass')) p.checked=true});updateBatch();});
+document.getElementById('selectVisible').addEventListener('click',()=>{picks.forEach(p=>{if(!p.closest('.card').classList.contains('hidden')) p.checked=true});updateBatch();});
 document.getElementById('clearPicks').addEventListener('click',()=>{picks.forEach(p=>p.checked=false);updateBatch();});
 document.getElementById('copyBatch').addEventListener('click',()=>{if(batch.value) navigator.clipboard.writeText(batch.value);});
+document.querySelectorAll('[data-copy-message]').forEach(button=>{
+  const label=button.textContent;
+  button.addEventListener('click',async()=>{
+    const message=button.dataset.copyMessage;
+    try{await navigator.clipboard.writeText(message);}
+    catch{window.prompt('Copy inquiry',message);}
+    button.textContent='Copied';
+    button.classList.add('copied');
+    setTimeout(()=>{button.textContent=label;button.classList.remove('copied');},1200);
+  });
+});
 updateBatch();
 </script>
 `;
