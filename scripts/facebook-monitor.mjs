@@ -4,6 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import childProcess from "node:child_process";
 import { pathToFileURL } from "node:url";
+import vm from "node:vm";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const CONFIG_PATH = path.join(ROOT, "monitoring/facebook-monitor.config.json");
@@ -1674,6 +1675,39 @@ function outputPath(file) {
   return path.isAbsolute(file) ? file : path.join(ROOT, file);
 }
 
+function extractAppScript(html) {
+  const match = html.match(/<script>([\s\S]*)<\/script>/);
+  if (!match) throw new Error("Could not find the app <script> block.");
+  const script = match[1];
+  const cutoff = script.indexOf("const feed=document.getElementById('feed')");
+  if (cutoff === -1) throw new Error("Could not find the feed render boundary.");
+  return script.slice(0, cutoff);
+}
+
+function auditFeedIndex(file) {
+  const html = fs.readFileSync(outputPath(file), "utf8");
+  const setupScript = extractAppScript(html);
+  const context = { console, result: null };
+  vm.createContext(context);
+  vm.runInContext(`${setupScript}
+function auditRow(apt){
+  return {
+    handle: apt.handle,
+    location: apt.location,
+    price: apt.price,
+    bedrooms: budgetBedroomCount(apt),
+    pricePerBedroom: pricePerBedroom(apt)
+  };
+}
+result = {
+  limit: BEDROOM_BUDGET_LIMIT,
+  visibleCount: ALL.length,
+  overBudgetVisible: ALL.map(auditRow).filter(a => a.pricePerBedroom !== null && a.pricePerBedroom > BEDROOM_BUDGET_LIMIT),
+  unknownVisible: ALL.map(auditRow).filter(a => a.pricePerBedroom === null)
+};`, context);
+  return context.result;
+}
+
 function generateReviewHtml(candidates, opts) {
   const out = opts.review || "monitoring/facebook-review.html";
   const generatedAt = new Date().toISOString();
@@ -1901,15 +1935,38 @@ function runPublish(file, opts) {
     console.error(`Refusing to publish duplicates: ${dupes.map(c => c.handle).join(", ")}`);
     process.exit(1);
   }
+  const config = loadConfig(opts);
+  const overBudgetSelected = selected.filter(c =>
+    c.pricePerBedroom !== null &&
+    c.pricePerBedroom !== undefined &&
+    c.pricePerBedroom > config.criteria.maxPricePerBedroom
+  );
+  if (overBudgetSelected.length) {
+    console.error(`Refusing to publish over-budget candidates: ${overBudgetSelected.map(c => `${c.handle} (${ppbLabel(c.pricePerBedroom)})`).join(", ")}`);
+    process.exit(1);
+  }
 
+  let audit = null;
   if (opts.apply) {
-    fs.writeFileSync(indexFile, insertSnippetsIntoIndex(indexText, snippets));
+    const nextIndexText = insertSnippetsIntoIndex(indexText, snippets);
+    fs.writeFileSync(indexFile, nextIndexText);
+    audit = auditFeedIndex(indexFile);
+    if (audit.overBudgetVisible.length) {
+      fs.writeFileSync(indexFile, indexText);
+      console.error(`Refusing to publish because the feed audit found visible over-budget cards: ${audit.overBudgetVisible.map(c => `${c.handle} (${ppbLabel(Math.round(c.pricePerBedroom))})`).join(", ")}`);
+      process.exit(1);
+    }
   }
 
   console.log(JSON.stringify({
     selected: selected.map(c => ({ handle: c.handle, status: c.status, score: c.score, price: priceLabel(c.price), ppb: ppbLabel(c.pricePerBedroom) })),
     applied: Boolean(opts.apply),
     index: opts.index || "index.html",
+    audit: audit ? {
+      visibleCount: audit.visibleCount,
+      overBudgetVisible: audit.overBudgetVisible.length,
+      unknownVisible: audit.unknownVisible.length
+    } : null,
     snippets: snippets.join("\n")
   }, null, 2));
 }

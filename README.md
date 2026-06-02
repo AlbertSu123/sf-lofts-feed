@@ -147,6 +147,8 @@ The review page also lets you select multiple pass/verify cards and copy a batch
 node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash> --apply
 ```
 
+`publish --apply` refuses known over-budget candidates and runs the feed audit after insertion, rolling back the edit if any known-priced card over `$2,500` per bedroom would become visible.
+
 To get a lightweight reminder/open-loop every 6 hours on this Mac:
 
 ```sh
