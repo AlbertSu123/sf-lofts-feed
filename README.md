@@ -58,6 +58,8 @@ open monitoring/facebook-review.html
 node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash>
 ```
 
+The review page also lets you select multiple pass/verify cards and copy a batch publish command.
+
 10. After verifying availability and poster identity, apply selected cards to the app:
 
 ```sh

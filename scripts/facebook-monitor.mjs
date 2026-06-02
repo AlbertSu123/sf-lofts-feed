@@ -580,10 +580,14 @@ function outputPath(file) {
 function generateReviewHtml(candidates, opts) {
   const out = opts.review || "monitoring/facebook-review.html";
   const generatedAt = new Date().toISOString();
+  const candidateFile = opts.out || DEFAULT_CANDIDATES_PATH;
   const rows = candidates.map(c => {
-    const publishCommand = `node scripts/facebook-monitor.mjs publish ${opts.out || DEFAULT_CANDIDATES_PATH} --select ${c.textHash.slice(0, 10)}`;
+    const shortHash = c.textHash.slice(0, 10);
+    const publishable = c.status === "pass" || c.status === "verify";
+    const publishCommand = `node scripts/facebook-monitor.mjs publish ${candidateFile} --select ${shortHash}`;
     return `<article class="card ${escapeHtml(c.status)}">
   <header>
+    ${publishable ? `<label class="pick"><input type="checkbox" data-hash="${escapeHtml(shortHash)}"> select</label>` : ""}
     <strong>${escapeHtml(c.status.toUpperCase())}</strong>
     <span>score ${escapeHtml(c.score)}</span>
     <span>${escapeHtml(priceLabel(c.price))}</span>
@@ -609,15 +613,42 @@ function generateReviewHtml(candidates, opts) {
 <style>
 body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:24px;color:#111;background:#f7f7f7}
 h1{margin:0 0 4px}.meta{color:#555;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.toolbar{position:sticky;top:0;z-index:2;background:#ffffffe8;border:1px solid #ddd;border-radius:8px;padding:10px;margin:0 0 16px;box-shadow:0 2px 8px #0001;display:grid;grid-template-columns:auto auto auto 1fr auto;gap:8px;align-items:center;backdrop-filter:blur(8px)}
+.toolbar button{border:1px solid #bbb;background:#fff;border-radius:6px;padding:7px 10px;cursor:pointer}.toolbar label{color:#555}
 .card{background:white;border:1px solid #ddd;border-left:7px solid #999;border-radius:8px;padding:14px;box-shadow:0 1px 3px #0001}
 .pass{border-left-color:#179b55}.verify{border-left-color:#c47f17}.reject{opacity:.72;border-left-color:#cc3333}.duplicate{opacity:.65;border-left-color:#777}
-header{display:flex;flex-wrap:wrap;gap:8px;color:#555}header strong{color:#111}h2{font-size:17px;margin:10px 0 8px}p{line-height:1.45}dl{display:grid;grid-template-columns:90px 1fr;gap:5px;margin:12px 0}dt{color:#666}dd{margin:0}code,input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}input{width:100%;padding:7px;border:1px solid #ccc;border-radius:5px}.actions{display:flex;gap:10px}.actions a{color:#06c}
+header{display:flex;flex-wrap:wrap;gap:8px;color:#555}.pick{color:#111;font-weight:600}header strong{color:#111}h2{font-size:17px;margin:10px 0 8px}p{line-height:1.45}dl{display:grid;grid-template-columns:90px 1fr;gap:5px;margin:12px 0}dt{color:#666}dd{margin:0}code,input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}input{width:100%;padding:7px;border:1px solid #ccc;border-radius:5px}.actions{display:flex;gap:10px}.actions a{color:#06c}
+@media(max-width:720px){.toolbar{grid-template-columns:1fr 1fr}.toolbar input,.toolbar label{grid-column:1/-1}}
 </style>
 <h1>Facebook Housing Candidate Review</h1>
 <div class="meta">Generated ${escapeHtml(generatedAt)} · ${candidates.length} candidates</div>
+<section class="toolbar">
+  <button type="button" id="selectPass">Select pass</button>
+  <button type="button" id="clearPicks">Clear</button>
+  <span id="pickedCount">0 selected</span>
+  <label>Batch publish command</label>
+  <input id="batchCommand" readonly value="">
+  <button type="button" id="copyBatch">Copy command</button>
+</section>
 <main class="grid">
 ${rows || "<p>No candidates.</p>"}
 </main>
+<script>
+const candidateFile=${js(candidateFile)};
+const picks=[...document.querySelectorAll('input[data-hash]')];
+const count=document.getElementById('pickedCount');
+const batch=document.getElementById('batchCommand');
+function updateBatch(){
+  const selected=picks.filter(p=>p.checked).map(p=>p.dataset.hash);
+  count.textContent=selected.length+" selected";
+  batch.value=selected.length ? "node scripts/facebook-monitor.mjs publish "+candidateFile+" --select "+selected.join(",") : "";
+}
+picks.forEach(p=>p.addEventListener('change',updateBatch));
+document.getElementById('selectPass').addEventListener('click',()=>{picks.forEach(p=>{if(p.closest('.pass')) p.checked=true});updateBatch();});
+document.getElementById('clearPicks').addEventListener('click',()=>{picks.forEach(p=>p.checked=false);updateBatch();});
+document.getElementById('copyBatch').addEventListener('click',()=>{if(batch.value) navigator.clipboard.writeText(batch.value);});
+updateBatch();
+</script>
 `;
   fs.writeFileSync(outputPath(out), html);
   return out;
