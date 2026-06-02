@@ -112,6 +112,36 @@ const COMMENT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 const SHARE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
 const SAVE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
 const CHECK=`<svg class="ck" viewBox="0 0 24 24" fill="#0095f6"><path d="M12 2l2.4 1.8 3 .1 1 2.8 2.3 1.9-1 2.8 1 2.8-2.3 1.9-1 2.8-3 .1L12 22l-2.4-1.8-3-.1-1-2.8L3.3 15l1-2.8-1-2.8 2.3-1.9 1-2.8 3-.1z"/><path d="M10.6 14.6l-2.2-2.2-1.1 1.1 3.3 3.3 5.6-5.6-1.1-1.1z" fill="#fff"/></svg>`;
+const FB_POSTS=q=>"https://www.facebook.com/search/posts/?q="+encodeURIComponent(q);
+const FB_MARKET=q=>"https://www.facebook.com/marketplace/sanfrancisco/search/?query="+encodeURIComponent(q);
+const FB_USERS=["source.check","space.signal","tour.first","rentmath","wfh.watch","due.diligence","local.context"];
+function fbComments(lines){
+  return lines.map((c,i)=>{
+    const u=FB_USERS[i%FB_USERS.length];
+    return {u,i:u.replace(/[^a-z0-9]/gi,"").slice(0,2).toUpperCase(),c,l:String(72+i*43),t:["1h","3h","5h","8h","11h","1d","2d"][i%7]};
+  });
+}
+function fbLead(o){
+  const {comments,...rest}=o;
+  const lines=comments||[
+    "Facebook-only lead: verify current availability before sending money, documents, or an application.",
+    "Worth tracking because the space/work signal is stronger than a normal 2BR.",
+    "Ask for exact address, tour timing, total move-in cash, and lease terms."
+  ];
+  return {
+    rank:"",
+    initials:o.handle.replace(/[^a-z0-9]/gi,"").slice(0,2).toUpperCase(),
+    verified:false,
+    checked:"6/2",
+    photos:["__MAP__"],
+    linktext:"Open Facebook search",
+    tags:"#facebookHousing #sfapartments",
+    likes:"1,407",
+    vstat:"unconf",
+    ...rest,
+    comments:fbComments(lines)
+  };
+}
 
 const APTS = [{
   rank:"#1 of 100 · BEST VALUE",
@@ -474,6 +504,300 @@ const APTS = [{
     {u:"tour.now",i:"TN",c:"available now + Craigslist means move fast, but verify the owner/manager before any deposit",l:"164",t:"1d"}
   ]
 },
+fbLead({
+  handle:"1177.market.takeover", initials:"RM", location:"1177 Market St · Mid-Market", price:"$3,223/mo",
+  specs:[{t:"2 bd",hot:false},{t:"1 ba",hot:false},{t:"Late Jun-Dec",hot:true},{t:"Lease takeover",hot:true},{t:"FB lead",hot:true}],
+  caption:"Facebook group lease-takeover lead from Roberto Celestino: a real 2BR at 1177 Market with late-June through December timing, central location, modern-building amenities, roof/gym/coworking, and unusually approachable rent.",
+  features:"✔︎ 2BR / 1BA lease takeover\n✔︎ $3,223/mo target rent from the post\n✔︎ Late June-Dec 2026 timing\n✔︎ Central Market building with rooftop, gym + coworking signals",
+  tags:"#facebookHousing #leaseTakeover #midmarket #2bedroom #value",
+  likes:"2,184",
+  mapq:"1177 Market St, San Francisco, CA 94103",
+  link:FB_POSTS("Roberto Celestino 1177 Market St lease takeover 2 bed San Francisco"),
+  source:"Facebook group lead · Roberto Celestino · late June-Dec 2026 takeover · last checked 6/2",
+  comments:[
+    "$3,223 for a real central 2BR is the value outlier if the takeover is still open.",
+    "Not a loft, but rooftop/gym/coworking makes it more useful than a plain apartment.",
+    "Ask square footage, lease-assignment process, remaining term, fees, and exact start date."
+  ]
+}),
+fbLead({
+  handle:"soma.2b2b.takeover", initials:"NI", location:"SoMa 2B2B · San Francisco", price:"~$5,600/mo",
+  specs:[{t:"2 bd",hot:false},{t:"2 ba",hot:true},{t:"Jun-Aug",hot:true},{t:"Lease takeover",hot:true},{t:"FB lead",hot:true}],
+  caption:"Facebook lead from Nneoma Iwueze: a SoMa 2B/2B lease takeover for June 1 through August 31, with natural light, newer-building amenities, coworking, roof/gym access, and fees/utilities reportedly folded into the monthly number.",
+  features:"✔︎ 2BR / 2BA short-term takeover\n✔︎ June 1-August 31 window\n✔︎ Natural light + newer-building amenity signal\n✔︎ Good if a summer bridge lease is useful",
+  tags:"#facebookHousing #soma #leaseTakeover #2bedroom #2bath",
+  likes:"1,963",
+  mapq:"SoMa, San Francisco, CA",
+  link:FB_POSTS("Nneoma Iwueze SoMa 2B2B lease takeover June August San Francisco"),
+  source:"Facebook group lead · Nneoma Iwueze · short-term takeover · last checked 6/2",
+  comments:[
+    "Short term, but two real baths and natural light make it useful if the timing fits.",
+    "Confirm whether the quoted monthly includes utilities, building fees, and parking.",
+    "Ask if the landlord/building permits sublease or formal lease takeover."
+  ]
+}),
+fbLead({
+  handle:"southbeach.office.fb", initials:"JC", location:"South Beach 2BR + office · San Francisco", price:"$5,950/mo",
+  specs:[{t:"2 bd",hot:false},{t:"1.5 ba",hot:false},{t:"1,100 sqft",hot:true},{t:"+ 375 sqft office",hot:true},{t:"7/1",hot:true}],
+  caption:"Marketplace lead from John Chung: South Beach 2BR with a separate lower-floor office/workspace, storage, backyard access, in-unit laundry, and July 1 availability. Not loft-branded, but the separate office makes it one of the strongest work-area leads.",
+  features:"✔︎ 1,100 sqft main unit + approx 375 sqft office/workspace\n✔︎ Separate office/storage zone under construction\n✔︎ Backyard access + in-unit laundry\n✔︎ Available 2026/07/01 per Marketplace notes",
+  tags:"#facebookMarketplace #southbeach #2bedroom #office #workfromhome",
+  likes:"2,641",
+  mapq:"South Beach, San Francisco, CA",
+  link:FB_MARKET("South Beach 2BR office workspace John Chung San Francisco"),
+  linktext:"Open Marketplace search",
+  source:"Facebook Marketplace lead · John Chung · office/workspace signal · last checked 6/2",
+  comments:[
+    "Separate office is the real signal here. That is much better than squeezing a desk into bedroom two.",
+    "Not loft/live-work, but the extra lower-floor workspace changes the utility math.",
+    "Ask exact cross streets, office completion status, backyard rules, utilities, and total move-in cash."
+  ]
+}),
+fbLead({
+  handle:"1133.balboa.den", initials:"WH", location:"1133 Balboa St · Inner Richmond", price:"$4,000/mo",
+  specs:[{t:"2 bd",hot:false},{t:"+ den/office",hot:true},{t:"1 ba",hot:false},{t:"W/D",hot:false},{t:"FB lead",hot:true}],
+  caption:"Facebook post from Wayne Ho: remodeled 2-bedroom plus den/office at 1133 Balboa, with exclusive washer/dryer, walk-in closet, ground-floor access, and a Golden Gate Park / Clement / Balboa corridor location.",
+  features:"✔︎ 2 bedrooms + dedicated den/office\n✔︎ Fully remodeled ground-floor unit\n✔︎ Exclusive washer/dryer + walk-in closet signal\n✔︎ Near Golden Gate Park, Clement St, and Balboa transit",
+  tags:"#facebookHousing #innerrichmond #2bedroom #office #wfh",
+  likes:"2,227",
+  mapq:"1133 Balboa St, San Francisco, CA 94118",
+  link:FB_POSTS("Wayne Ho 1133 Balboa 2 bedroom den office San Francisco rent"),
+  source:"Facebook post lead · Wayne Ho · NOW AVAILABLE wording · last checked 6/2",
+  comments:[
+    "The den/office is the reason this belongs in the queue even though it is not a loft.",
+    "No square footage listed, so the office could be great or tiny. Ask before touring.",
+    "Post says no pets. Confirm that early if pets matter."
+  ]
+}),
+fbLead({
+  handle:"mission.valencia.loft", initials:"MS", location:"Mission loft near Valencia · San Francisco", price:"$5,100/mo",
+  specs:[{t:"Loft layout",hot:true},{t:"1.5 ba",hot:false},{t:"950 sqft",hot:false},{t:"+ patio",hot:true},{t:"7/1",hot:true}],
+  caption:"Facebook group lead from Mabel Shah: Mission loft near Valencia with 950 interior sqft plus about 500 sqft of private patio, 1.5 baths, July 1 availability, and the best outdoor-space signal in the Facebook set.",
+  features:"✔︎ Loft layout near Valencia\n✔︎ 950 sqft interior + approx 500 sqft private patio\n✔︎ 1.5 baths and July 1 availability\n✔︎ Great Mission location if the bedroom setup works",
+  tags:"#facebookHousing #mission #loft #privatePatio #valencia",
+  likes:"2,318",
+  mapq:"Valencia St, San Francisco, CA",
+  link:FB_POSTS("Mabel Shah Mission loft Valencia patio San Francisco rent July 1"),
+  source:"Facebook group lead · Mabel Shah · loft/patio signal · last checked 6/2",
+  comments:[
+    "Private patio plus loft layout is a real lifestyle upgrade, even if the interior sqft is modest.",
+    "Likely not a true 2BR. Ask whether there are two legal sleeping rooms before prioritizing.",
+    "Confirm address, patio exclusivity, pets, and whether the lease takeover is approved."
+  ]
+}),
+fbLead({
+  handle:"318.allison.big3", initials:"DB", location:"318 Allison St · Excelsior / Crocker-Amazon", price:"$4,250/mo",
+  specs:[{t:"3 bd",hot:true},{t:"2 ba",hot:true},{t:"1,500 sqft",hot:true},{t:"Garage",hot:false},{t:"FB lead",hot:true}],
+  caption:"Facebook lead from Daniel Brooks: 318 Allison is a big 3BR/2BA fallback with 1,500 sqft, garage/storage, washer/dryer, and yard access. Not lofty, but the space-per-dollar is strong.",
+  features:"✔︎ 3BR / 2BA · 1,500 sqft\n✔︎ Garage/storage + washer/dryer signals\n✔︎ Yard access\n✔︎ Strong conventional fallback for space-first searching",
+  tags:"#facebookHousing #excelsior #3bedroom #bigspace #fallback",
+  likes:"1,906",
+  mapq:"318 Allison St, San Francisco, CA 94112",
+  link:FB_POSTS("Daniel Brooks 318 Allison St 3 bedroom 2 bath San Francisco rent"),
+  source:"Facebook lead · Daniel Brooks · spacious conventional fallback · last checked 6/2",
+  comments:[
+    "This is the big-space fallback: not loft/live-work, but 1,500 sqft at this price is useful.",
+    "Garage/storage and yard make it more practical than many prettier listings.",
+    "Ask current availability, whether laundry is private, and exact move-in requirements."
+  ]
+}),
+fbLead({
+  handle:"mullen.601.verify", initials:"JL", location:"601 4th St / Mullen Building · SoMa", price:"Price TBD",
+  specs:[{t:"2 bd",hot:false},{t:"2 ba",hot:true},{t:"Live/work",hot:true},{t:"Patio",hot:true},{t:"Verify",hot:true}],
+  caption:"Verification lead from Jessie Lee: a 2BD/2BA live/work conversion loft at the historic Mullen Building / 601 4th St, with soaring windows, private patio, downtown views, and rent/sale ambiguity that needs a direct availability check.",
+  features:"✔︎ Direct 2BD/2BA live/work conversion-loft match\n✔︎ Historic Mullen Building signal\n✔︎ Soaring windows + huge private patio\n✔︎ Price and active rental status still missing",
+  tags:"#facebookHousing #soma #mullenBuilding #livework #verify",
+  likes:"1,744",
+  mapq:"601 4th St, San Francisco, CA 94107",
+  link:FB_POSTS("Jessie Lee 601 4th St Mullen Building 2BD 2BA live work loft rent"),
+  source:"Facebook realtor verification lead · Jessie Lee · posted Oct. 25, 2025 · last checked 6/2",
+  comments:[
+    "Best unverified live/work architecture lead, but price/currentness are the whole question.",
+    "Post language said open for rent and for sale, so ask directly if rental is active.",
+    "Contact route in the monitor: Ask@JessieLeeSF.com / 415.518.6402."
+  ]
+}),
+fbLead({
+  handle:"mint.602.verify", initials:"MB", location:"2 Mint Plaza #602 · SoMa / Hales Warehouse", price:"Price TBD",
+  specs:[{t:"2 bd",hot:false},{t:"2 ba",hot:false},{t:"2,018 sqft",hot:true},{t:"Live/work",hot:true},{t:"Verify",hot:true}],
+  caption:"Verification lead from Michelle Balog / Lewis Phillips: 2 Mint Plaza #602, a 2BR/2BA Hales Warehouse live/work retreat with 2,018 sqft and industrial loft character. Great fit if it is actually available as a rental.",
+  features:"✔︎ 2BR / 2BA · 2,018 sqft\n✔︎ Hales Warehouse live/work retreat language\n✔︎ Industrial-chic loft character\n✔︎ Coming-soon / realtor wording means rental status is unclear",
+  tags:"#facebookHousing #mintPlaza #halesWarehouse #livework #verify",
+  likes:"1,891",
+  mapq:"2 Mint Plaza, San Francisco, CA 94103",
+  link:FB_POSTS("Michelle Balog Lewis Phillips 2 Mint Plaza 602 live work retreat rent"),
+  source:"Facebook verification lead · Michelle Balog / Lewis Phillips · last checked 6/2",
+  comments:[
+    "Physically excellent fit, but it may be a sale/coming-soon post rather than an active rental.",
+    "Unit 502 is already public and active; #602 is the extra Facebook verification lead.",
+    "Ask price, rental-vs-sale status, current availability, and whether photos are current."
+  ]
+}),
+fbLead({
+  handle:"1369.hyde.office", initials:"RS", location:"1369 Hyde St · Nob Hill", price:"Price TBD",
+  specs:[{t:"2 bd",hot:false},{t:"+ office",hot:true},{t:"1911 bldg",hot:false},{t:"Verify",hot:true},{t:"FB lead",hot:true}],
+  caption:"RentSFNow Facebook lead for Keystone Apartments / 1369 Hyde: a 2-bedroom with a dedicated separate office space in a historic 1911 building. Price, square footage, and exact availability still need confirmation.",
+  features:"✔︎ 2-bedroom with a separate dedicated office\n✔︎ Historic 1911 Nob Hill building\n✔︎ Stainless appliances + efficient kitchen layout signal\n✔︎ Price, sqft, and current availability missing",
+  tags:"#facebookHousing #nobhill #2bedroom #office #verify",
+  likes:"1,583",
+  mapq:"1369 Hyde St, San Francisco, CA 94109",
+  link:FB_POSTS("RentSFNow 1369 Hyde 2 bedroom dedicated office space San Francisco"),
+  source:"Facebook property-manager lead · RentSFNow · posted May 27, 2026 · last checked 6/2",
+  comments:[
+    "Separate office is exactly the WFH signal, but missing price/sqft keeps it in verify mode.",
+    "RentSFNow source is more credible than random public-profile rental posts.",
+    "Ask monthly rent, floor plan, square footage, tour link, and move-in fees."
+  ]
+}),
+fbLead({
+  handle:"739.shotwell.office", initials:"EM", location:"739 Shotwell St · Mission", price:"~$5,457/mo est.",
+  specs:[{t:"2 bd",hot:false},{t:"+ office",hot:true},{t:"1 ba",hot:false},{t:"1,022 sqft",hot:true},{t:"Likely stale",hot:true}],
+  caption:"Older Facebook verification lead from Elsa Moliwood: 2-bedroom plus office in a detached Victorian on Shotwell between 21st and 22nd, with private entrance, garden access, tons of light, in-unit W/D, and 1,022 sqft from Zillow context.",
+  features:"✔︎ 2BR + office in a detached Victorian\n✔︎ 1,022 sqft Zillow context + garden/shed signal\n✔︎ Private entrance and strong light language\n✔︎ Zillow now says off market, so treat as stale unless poster confirms",
+  tags:"#facebookHousing #mission #2bedroom #office #garden",
+  likes:"1,462",
+  mapq:"739 Shotwell St, San Francisco, CA 94110",
+  link:FB_POSTS("Elsa Moliwood 739 Shotwell 2 bedroom office Mission rent"),
+  source:"Facebook verification lead · Elsa Moliwood · older post + Zillow off-market caveat · last checked 6/2",
+  comments:[
+    "Good layout on paper: office, garden, private entrance, and real square footage.",
+    "Availability date looked old and Zillow says off market, so this is a check-only lead.",
+    "Ask whether it is already rented before spending time on details."
+  ]
+}),
+fbLead({
+  handle:"soma.fidi.takeover", initials:"IA", location:"SoMa / FiDi luxury high-rise · San Francisco", price:"$5,249/mo",
+  specs:[{t:"2 bd",hot:false},{t:"2 ba",hot:true},{t:"1,052 sqft",hot:true},{t:"Lease takeover",hot:true},{t:"Verify",hot:true}],
+  caption:"Facebook lease-takeover fallback from Indu Abhilash: 2BR/2BA corner high-rise unit, 1,052 sqft, floor-to-ceiling windows, full lease takeover, and $5,249/mo. The April priority move-in date has passed, so it needs currentness confirmation.",
+  features:"✔︎ 2BR / 2BA corner unit · 1,052 sqft\n✔︎ Floor-to-ceiling windows + light signal\n✔︎ Full lease-takeover setup\n✔︎ April priority date has passed; verify still available",
+  tags:"#facebookHousing #leaseTakeover #2bedroom #2bath #verify",
+  likes:"1,558",
+  mapq:"SoMa, San Francisco, CA",
+  link:FB_POSTS("Indu Abhilash 2 bed 2 bath lease takeover San Francisco floor-to-ceiling windows"),
+  source:"Facebook fallback lead · Indu Abhilash · posted April 7 · last checked 6/2",
+  comments:[
+    "Not loft/live-work, but the corner-unit light and 2BA setup make it a credible fallback.",
+    "The April 23 priority move-in date passed, so ask if it is still alive first.",
+    "Confirm building, lease transfer rules, concessions, and total monthly cost."
+  ]
+}),
+fbLead({
+  handle:"graham.26th.sharedloft", initials:"GP", location:"26th St designer loft · Potrero/Mission edge", price:"$2,300/mo",
+  specs:[{t:"Shared 2 bd",hot:false},{t:"2 ba",hot:true},{t:"1,700 sqft",hot:true},{t:"Designer loft",hot:true},{t:"Marketplace",hot:true}],
+  caption:"Marketplace shared-loft lead from Graham Plumb: designer 2BR/2BA loft at the Potrero/Mission edge, 1,700 sqft, 18-foot ceilings, south-facing windows, deck, and a room-plus-office setup for one person.",
+  features:"✔︎ Shared 2BR / 2BA designer loft\n✔︎ 1,700 sqft with 18-foot ceilings\n✔︎ South-facing ceiling-height windows + deck\n✔︎ Two rooms available for one person; not a whole-unit rental",
+  tags:"#facebookMarketplace #sharedLoft #potrero #mission #designerLoft",
+  likes:"1,996",
+  mapq:"26th St, San Francisco, CA",
+  link:FB_MARKET("Graham Plumb 26th St designer loft 1700 sqft San Francisco"),
+  linktext:"Open Marketplace search",
+  source:"Facebook Marketplace shared lead · Graham Plumb · listed 3 days ago · last checked 6/2",
+  comments:[
+    "Real loft architecture, but shared housing. Only pursue if that setup is acceptable.",
+    "Room plus office could be great for one person who wants a studio-feeling workspace.",
+    "Ask roommate details, exact rooms, utilities, lease terms, and whether guests/pets are allowed."
+  ]
+}),
+fbLead({
+  handle:"jake.1bluxome.room", initials:"JS", location:"1 Bluxome loft room · SoMa", price:"$3,500/mo + utilities",
+  specs:[{t:"Room in 2 bd",hot:false},{t:"2 ba",hot:true},{t:"Loft",hot:true},{t:"Flexible move-in",hot:true},{t:"Shared",hot:true}],
+  caption:"Facebook shared-loft lead from Jake Stevens: room in a 2 bed / 2 bath 1 Bluxome loft, with large windows, in-unit laundry, Caltrain/Oracle Park proximity, and flexible move-in timing.",
+  features:"✔︎ Room in a real SoMa 2BR / 2BA loft\n✔︎ Large windows + in-unit laundry signal\n✔︎ Near Caltrain and Oracle Park\n✔︎ Shared setup, not a whole-unit rental",
+  tags:"#facebookHousing #sharedLoft #bluxome #soma #caltrain",
+  likes:"1,319",
+  mapq:"1 Bluxome St, San Francisco, CA 94107",
+  link:FB_POSTS("Jake Stevens 1 Bluxome 2 bed 2 bath loft room San Francisco"),
+  source:"Facebook shared-housing lead · Jake Stevens · last checked 6/2",
+  comments:[
+    "Useful if shared housing is on the table; otherwise skip it.",
+    "1 Bluxome location and loft layout are strong, but $3,500 plus utilities is not cheap for a room.",
+    "Ask roommate details, exact bedroom/bath allocation, utilities, lease, and move-in cash."
+  ]
+}),
+fbLead({
+  handle:"2410.34th.fullfloor", initials:"RZ", location:"2410 34th Ave · Sunset", price:"$4,200/mo",
+  specs:[{t:"2 bd",hot:false},{t:"1.5 ba?",hot:false},{t:"1,161 sqft",hot:true},{t:"Full-floor",hot:true},{t:"Marketplace",hot:true}],
+  caption:"Marketplace conventional fallback from Raymond Zhen: full-floor Sunset duplex with 2BR title, 1.5-bath description signal, 1,161 sqft, washer/dryer in garage, and immediate availability.",
+  features:"✔︎ 2BR title with 1.5BA description signal\n✔︎ 1,161 sqft full-floor duplex\n✔︎ Bright layout + W/D in garage\n✔︎ Conventional, not loft/live-work",
+  tags:"#facebookMarketplace #sunset #2bedroom #fullfloor #fallback",
+  likes:"1,497",
+  mapq:"2410 34th Ave, San Francisco, CA 94116",
+  link:FB_MARKET("Raymond Zhen 2410 34th Ave 2 bedroom San Francisco rent"),
+  linktext:"Open Marketplace search",
+  source:"Facebook Marketplace conventional fallback · Raymond Zhen · last checked 6/2",
+  comments:[
+    "Good square footage and full-floor layout make this a real fallback, despite no loft signal.",
+    "Street parking only according to the monitor notes, so confirm car reality.",
+    "Ask whether it is 1 bath or 1.5 baths and get the exact lease terms."
+  ]
+}),
+fbLead({
+  handle:"669.9th.marketplace", initials:"DL", location:"669 9th Ave · Inner Richmond", price:"$3,950/mo",
+  specs:[{t:"2 bd",hot:false},{t:"1 ba",hot:false},{t:"Updated",hot:false},{t:"Avail NOW",hot:true},{t:"Marketplace",hot:true}],
+  caption:"Marketplace conventional fallback from Dennis Luu: updated 2BR/1BA near Golden Gate Park with immediate availability and good closet/storage language. Lower priority, but useful if the search widens beyond loft/workspace.",
+  features:"✔︎ 2BR / 1BA updated apartment\n✔︎ Near Golden Gate Park\n✔︎ Good closet/storage language\n✔︎ Conventional, no listed square footage",
+  tags:"#facebookMarketplace #innerrichmond #2bedroom #goldengatepark #fallback",
+  likes:"1,412",
+  mapq:"669 9th Ave, San Francisco, CA 94118",
+  link:FB_MARKET("Dennis Luu 669 9th Ave 2 bedroom San Francisco rent"),
+  linktext:"Open Marketplace search",
+  source:"Facebook Marketplace conventional fallback · Dennis Luu · last checked 6/2",
+  comments:[
+    "Solid conventional lead if location and price matter more than loft character.",
+    "No square footage listed, so ask before comparing it to larger spaces.",
+    "Confirm parking, laundry, pets, and whether the lister is owner/manager."
+  ]
+}),
+fbLead({
+  handle:"301.mission.fb", initials:"MW", location:"301 Mission St · Millennium Tower", price:"$7,995/mo",
+  specs:[{t:"2 bd",hot:false},{t:"2 ba",hot:true},{t:"1,517 sqft",hot:true},{t:"Luxury condo",hot:false},{t:"Marketplace",hot:true}],
+  caption:"Marketplace spacious-conventional fallback from Matthew Woebcke: Millennium Tower 2BR/2BA condo with 1,517 sqft, in-unit laundry, garage parking, central AC/heat, and a credible downtown location.",
+  features:"✔︎ 2BR / 2BA · 1,517 sqft\n✔︎ In-unit laundry + garage parking\n✔︎ Central AC/heat\n✔︎ Spacious but conventional luxury condo, not loft/live-work",
+  tags:"#facebookMarketplace #millenniumTower #2bedroom #bigspace #fallback",
+  likes:"1,635",
+  mapq:"301 Mission St, San Francisco, CA 94105",
+  link:FB_MARKET("Matthew Woebcke 301 Mission 2 bed 2 bath 1517 sqft rent"),
+  linktext:"Open Marketplace search",
+  source:"Facebook Marketplace conventional fallback · Matthew Woebcke · last checked 6/2",
+  comments:[
+    "Big real 2BR, but the price is deep into luxury-condo territory.",
+    "Good fallback only if square footage and downtown convenience beat loft character.",
+    "Ask about building fees, parking cost, move-in rules, and Millennium Tower disclosures."
+  ]
+}),
+fbLead({
+  handle:"broad.st.3br", initials:"BF", location:"Broad St / Oceanview · San Francisco", price:"$4,500/mo",
+  specs:[{t:"3 bd",hot:true},{t:"2 ba",hot:true},{t:"6/15",hot:true},{t:"Section 8 ok",hot:false},{t:"Marketplace",hot:true}],
+  caption:"Marketplace conventional fallback from Brendy Flah: Broad St / Oceanview 3BR/2BA at $4,500, available 2026/06/15, street parking, and Section 8 accepted. Needs square-footage verification before it competes with the big-space leads.",
+  features:"✔︎ 3BR / 2BA at $4,500\n✔︎ Available 2026/06/15\n✔︎ Section 8 accepted\n✔︎ No sqft or loft/workspace signal yet",
+  tags:"#facebookMarketplace #oceanview #3bedroom #fallback #verify",
+  likes:"1,278",
+  mapq:"Broad St, San Francisco, CA",
+  link:FB_MARKET("Brendy Flah Broad St 3 bedroom 2 bath San Francisco rent"),
+  linktext:"Open Marketplace search",
+  source:"Facebook Marketplace conventional fallback · Brendy Flah · last checked 6/2",
+  comments:[
+    "Current 3BR/2BA at a sane price is useful, but no loft or workspace signal.",
+    "Ask square footage first. Without size, it is hard to rank against the loft queue.",
+    "Confirm exact address, parking, lease terms, and whether Section 8 language is accurate."
+  ]
+}),
+fbLead({
+  handle:"mission.potrero.office", initials:"SL", location:"Mission / Potrero 2BR + office · San Francisco", price:"$4,700/mo",
+  specs:[{t:"2 bd",hot:false},{t:"2 ba",hot:true},{t:"Office setup",hot:true},{t:"Garden",hot:true},{t:"Sep start",hot:false}],
+  caption:"Facebook group fallback from Steven Li: 2BR/2BA between Mission and Potrero Hill, with the second bedroom currently set up as an office, private Zen garden access, in-unit Miele washer/dryer, and garage parking available for $350/mo.",
+  features:"✔︎ 2BR / 2BA with office setup\n✔︎ Private Zen garden access\n✔︎ In-unit Miele washer/dryer\n✔︎ September timing; garage parking +$350/mo",
+  tags:"#facebookHousing #mission #potrero #2bedroom #office",
+  likes:"1,672",
+  mapq:"Mission Potrero Hill, San Francisco, CA",
+  link:FB_POSTS("Steven Li Mission Potrero 2 bed 2 bath office Zen garden San Francisco rent"),
+  source:"Facebook group fallback · Steven Li · September timing · last checked 6/2",
+  comments:[
+    "Not loft/live-work, but the existing office setup plus garden makes it a strong conventional workspace lead.",
+    "September start may be too far out depending on move timing.",
+    "Ask exact address, square footage, furnished-vs-vacant terms, garage details, and quiet-building claims."
+  ]
+}),
 {
   rank:"#2 of 100 · CHEAPEST 2BR/2BA",
   handle:"missionbay.2br", initials:"MB", location:"Mission Bay · San Francisco", verified:true,
@@ -729,7 +1053,7 @@ const COMPACT=[
 const DEAD=["missionbay.2br","bush.stylish","bonus.2br","sf.3bed2bath","188.octavia","3345.fillmore"];
 const UNCONF=["1660.sacramento","3509.mission","1354.palou","224.cordova","1450.pacheco","2726.sanbruno","848.girard","1566.newcomb","247.20th","346.monticello"];
 const ALL=APTS.concat(COMPACT.map(expand)).filter(a=>!DEAD.includes(a.handle));
-ALL.forEach((a,i)=>{a.rank="#"+(i+1)+" of "+ALL.length+(i===0?" · BEST VALUE":"");a.vstat=UNCONF.includes(a.handle)?"unconf":"ok";});
+ALL.forEach((a,i)=>{a.rank="#"+(i+1)+" of "+ALL.length+(i===0?" · BEST VALUE":"");a.vstat=a.vstat||(UNCONF.includes(a.handle)?"unconf":"ok");});
 
 const feed=document.getElementById('feed');
 
