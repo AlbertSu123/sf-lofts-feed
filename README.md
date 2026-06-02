@@ -44,7 +44,7 @@ pbpaste | node scripts/facebook-monitor.mjs groups - --priority high
 node scripts/facebook-monitor.mjs status
 ```
 
-`status` includes `setupGaps`; if it reports no groups, no listing captures, or no candidates, the monitor still needs a logged-in Facebook capture before it can source real leads.
+`status` includes `setupGaps`; if it reports no groups, no listing-like posts, or no candidates, the monitor still needs a logged-in Facebook capture before it can source real leads. Empty group sweeps count for group freshness but not as listing posts.
 
 For a fuller readiness check, including pending capture downloads, generated local pages, and whether the 6-hour reminder is installed:
 

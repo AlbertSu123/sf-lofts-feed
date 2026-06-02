@@ -1500,9 +1500,24 @@ function relativeOut(file) {
   return path.relative(ROOT, outputPath(file));
 }
 
+function inboxCaptureStats(files) {
+  let posts = 0;
+  let sweepMarkers = 0;
+  for (const file of files) {
+    posts += parseCaptureFile(file).length;
+    sweepMarkers += parseCoverageFile(file).filter(isCaptureMarker).length;
+  }
+  return {
+    files: files.length,
+    posts,
+    sweepMarkers
+  };
+}
+
 function monitorSnapshot(config = loadConfig(), opts = {}) {
   const inboxDir = opts.inbox || "monitoring/facebook-inbox";
   const files = inboxFiles(inboxDir);
+  const inboxStats = inboxCaptureStats(files);
   const candidatesFile = opts.candidates || DEFAULT_CANDIDATES_PATH;
   const candidatesPath = outputPath(candidatesFile);
   const statePath = outputPath(opts.state || DEFAULT_STATE_PATH);
@@ -1515,7 +1530,9 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
     setupGaps.push("No configured Facebook housing groups yet.");
   }
   if (!files.length) {
-    setupGaps.push("No imported Facebook listing capture files yet.");
+    setupGaps.push("No imported Facebook capture files yet.");
+  } else if (!inboxStats.posts) {
+    setupGaps.push("Imported Facebook sweeps have not produced listing-like posts yet.");
   }
   if (!candidates.length) {
     setupGaps.push("No scored Facebook candidates yet.");
@@ -1527,7 +1544,9 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
     groupNames: config.facebook.groups.map(group => group.name),
     baselineSearches: (config.facebook.searchTerms || []).length * 2,
     totalWatchSearches: watchRows.length,
-    inboxFiles: files.length,
+    inboxFiles: inboxStats.files,
+    inboxPosts: inboxStats.posts,
+    sweepMarkers: inboxStats.sweepMarkers,
     candidates: candidates.length,
     candidateStatus: countStatuses(candidates),
     seenHashes: (state.seenHashes || []).length,
@@ -1645,8 +1664,11 @@ function monitorNextActions(snapshot, downloads, generatedFiles, launchAgent, op
   } else if (snapshot.groups && !snapshot.inboxFiles) {
     actions.push("Fast-sweep configured groups: node scripts/facebook-monitor.mjs group-watch --open");
     actions.push("Capture listings from configured groups: node scripts/facebook-monitor.mjs run --open-group-watch");
+  } else if (snapshot.groups && snapshot.inboxFiles && !snapshot.inboxPosts) {
+    actions.push("Sweeps imported but no listing-like posts found yet: continue the group sweep or open the deeper search batch.");
+    actions.push("Deep-search configured groups: node scripts/facebook-monitor.mjs next --open-watch");
   }
-  if (snapshot.inboxFiles && !snapshot.candidates) {
+  if (snapshot.inboxPosts && !snapshot.candidates) {
     actions.push("Score imported captures: node scripts/facebook-monitor.mjs scan --open");
   }
   const reviewable = (snapshot.candidateStatus.pass || 0) + (snapshot.candidateStatus.verify || 0);
@@ -1670,7 +1692,9 @@ function runDoctor(opts = {}) {
   const launchAgent = launchAgentStatus();
   const readiness = {
     groupsConfigured: snapshot.groups > 0,
-    listingCapturesImported: snapshot.inboxFiles > 0,
+    captureFilesImported: snapshot.inboxFiles > 0,
+    listingCapturesImported: snapshot.inboxPosts > 0,
+    sweepMarkersImported: snapshot.sweepMarkers > 0,
     candidatesScored: snapshot.candidates > 0,
     hasReviewableCandidates: (snapshot.candidateStatus.pass || 0) + (snapshot.candidateStatus.verify || 0) > 0,
     unimportedDownloads: downloads.unimported,
@@ -1856,9 +1880,13 @@ function runNext(opts) {
   }
   if (!snapshot.inboxFiles) {
     setupLines.push("Listing capture inbox is still empty. Open the group sweep while logged into Facebook, click the bookmarklet on each group feed, then rerun `node scripts/facebook-monitor.mjs run --open-review`.");
+  } else if (!snapshot.inboxPosts) {
+    setupLines.push("Capture files are imported, but none include listing-like posts yet. Continue group sweeps, mark noisy/inaccessible groups, or use the deeper search batch.");
   }
   if (!snapshot.candidates) {
-    setupLines.push("Review queue is empty. It will populate after the first imported capture with housing-like posts.");
+    setupLines.push(snapshot.inboxPosts
+      ? "Review queue is empty. Run `node scripts/facebook-monitor.mjs scan --open` to score imported listing posts."
+      : "Review queue is empty. It will populate after the first imported capture with housing-like posts.");
   }
   const freshnessLines = !coverage.groups.length
     ? ["- No groups configured yet."]
@@ -1894,6 +1922,8 @@ function runNext(opts) {
     "## Current Queue",
     "",
     `Inbox capture files: ${snapshot.inboxFiles}`,
+    `Listing-like posts: ${snapshot.inboxPosts}`,
+    `Sweep markers: ${snapshot.sweepMarkers}`,
     `Candidates: ${snapshot.candidates}`,
     `Candidate status counts: pass ${counts.pass || 0}, verify ${counts.verify || 0}, review ${counts.review || 0}, reject ${counts.reject || 0}, duplicate ${counts.duplicate || 0}`,
     `Seen post hashes: ${snapshot.seenHashes}`,
@@ -1956,6 +1986,8 @@ function runNext(opts) {
     rotation: watch.rotation,
     focusedGroups: watch.focusedGroups,
     inboxFiles: snapshot.inboxFiles,
+    inboxPosts: snapshot.inboxPosts,
+    sweepMarkers: snapshot.sweepMarkers,
     candidates: snapshot.candidates,
     candidateStatus: snapshot.candidateStatus,
     groupCoverage: {
