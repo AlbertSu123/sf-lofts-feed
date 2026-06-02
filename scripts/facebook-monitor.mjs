@@ -467,6 +467,9 @@ function generateWatchBatch(config, opts) {
     const reviewPath = "monitoring/facebook-review.html";
     const reviewRel = path.relative(path.dirname(outputPath(htmlOut)), outputPath(reviewPath)).replace(/\\/g, "/");
     const reviewHref = reviewRel.startsWith("..") ? pathToFileURL(outputPath(reviewPath)).href : reviewRel;
+    const coveragePath = DEFAULT_COVERAGE_HTML_PATH;
+    const coverageRel = path.relative(path.dirname(outputPath(htmlOut)), outputPath(coveragePath)).replace(/\\/g, "/");
+    const coverageHref = coverageRel.startsWith("..") ? pathToFileURL(outputPath(coveragePath)).href : coverageRel;
     const doneKey = `sf-lofts-facebook-watch:${crypto.createHash("sha1").update(rows.map(row => row.url).join("\n")).digest("hex").slice(0, 12)}`;
     const html = `<!doctype html>
 <meta charset="utf-8">
@@ -487,6 +490,7 @@ code,textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}textarea{w
     <div class="step"><b>2. Capture</b>Open a row, sort recent where possible, click <code>Capture FB Housing</code>, then check it off here.</div>
     <div class="step"><b>3. Import</b><span class="cmd">node scripts/facebook-monitor.mjs run --open-review</span></div>
     <div class="step"><b>4. Review</b><a href="${escapeHtml(reviewHref)}">Open review page</a> after imports finish.</div>
+    <div class="step"><b>5. Curate</b><a href="${escapeHtml(coverageHref)}">Open coverage</a> to mark joined, noisy, or inaccessible groups.</div>
   </div>
   <div class="controls">
     <span class="progress" id="progress">0/${rows.length} captured</span>
@@ -1121,6 +1125,30 @@ function coverageSearchUrl(row, config) {
   return groupSearchUrl(row.url, term);
 }
 
+function groupStatusCommand(row, status, opts = {}) {
+  const parts = [
+    "node",
+    "scripts/facebook-monitor.mjs",
+    "group-status",
+    shellQuote(row.url),
+    "--status",
+    shellQuote(status)
+  ];
+  if (opts.watch !== undefined) parts.push("--watch", opts.watch ? "true" : "false");
+  if (opts.quality) parts.push("--quality", shellQuote(opts.quality));
+  return parts.join(" ");
+}
+
+function groupStatusActions(row) {
+  return [
+    ["Joined", groupStatusCommand(row, "joined", { watch: true, quality: "good" })],
+    ["Pending", groupStatusCommand(row, "pending", { watch: true })],
+    ["Noisy", groupStatusCommand(row, "noisy", { watch: false, quality: "low" })],
+    ["Inaccessible", groupStatusCommand(row, "inaccessible", { watch: false })],
+    ["Skip", groupStatusCommand(row, "skip", { watch: false })]
+  ].map(([label, command]) => `<button type="button" data-copy-cmd="${escapeHtml(command)}">${escapeHtml(label)}</button>`).join("");
+}
+
 function coverageFiles(config, coverage, opts = {}) {
   const mdOut = opts.out || opts.coverage || DEFAULT_COVERAGE_PATH;
   const htmlOut = opts.html || opts["coverage-html"] || DEFAULT_COVERAGE_HTML_PATH;
@@ -1163,6 +1191,7 @@ body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-heigh
 a{color:#06c}.summary{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.pill{background:#fff;border:1px solid #ddd;border-radius:999px;padding:6px 10px}
 table{border-collapse:collapse;width:100%;max-width:1220px;background:#fff}td,th{border:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}th{background:#f6f6f6}
 .never{background:#fff3f3}.stale{background:#fff8e8}.fresh{background:#eef8ef}.low{color:#666}.links{white-space:nowrap}
+.actions{display:flex;gap:5px;flex-wrap:wrap;min-width:190px}.actions button{border:1px solid #bbb;background:#fff;border-radius:6px;padding:5px 7px;cursor:pointer;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.actions button.copied{background:#eaf7ed;border-color:#9bc69f}
 </style>
 <h1>Facebook Group Capture Coverage</h1>
 <p>Generated ${escapeHtml(now)}. Stale threshold: ${escapeHtml(coverage.staleHours)} hours.</p>
@@ -1175,11 +1204,30 @@ table{border-collapse:collapse;width:100%;max-width:1220px;background:#fff}td,th
   <span class="pill">${coverage.neverCapturedGroups} never captured</span>
 </section>
 <table>
-<thead><tr><th>Freshness</th><th>Access</th><th>Watch</th><th>Priority</th><th>Group</th><th>Captures</th><th>Last captured</th><th>Age</th><th>Source</th><th>Notes</th><th>Links</th></tr></thead>
+<thead><tr><th>Freshness</th><th>Access</th><th>Watch</th><th>Priority</th><th>Group</th><th>Captures</th><th>Last captured</th><th>Age</th><th>Source</th><th>Notes</th><th>Links</th><th>Curation</th></tr></thead>
 <tbody>
-${coverage.groups.map(row => `<tr class="${escapeHtml(row.status)}"><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.accessStatus)}</td><td>${row.watch ? "yes" : "no"}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(row.name)}</td><td>${row.captureCount}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td>${escapeHtml(sourceLabel(row))}</td><td>${escapeHtml(notesLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td></tr>`).join("\n")}
+${coverage.groups.map(row => `<tr class="${escapeHtml(row.status)}"><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.accessStatus)}</td><td>${row.watch ? "yes" : "no"}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(row.name)}</td><td>${row.captureCount}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td>${escapeHtml(sourceLabel(row))}</td><td>${escapeHtml(notesLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td><td class="actions">${groupStatusActions(row)}</td></tr>`).join("\n")}
 </tbody>
 </table>
+<script>
+document.querySelectorAll("[data-copy-cmd]").forEach(button => {
+  const label = button.textContent;
+  button.addEventListener("click", async () => {
+    const command = button.dataset.copyCmd;
+    try {
+      await navigator.clipboard.writeText(command);
+    } catch {
+      window.prompt("Copy command", command);
+    }
+    button.textContent = "Copied";
+    button.classList.add("copied");
+    setTimeout(() => {
+      button.textContent = label;
+      button.classList.remove("copied");
+    }, 1200);
+  });
+});
+</script>
 `;
   fs.writeFileSync(outputPath(htmlOut), html);
 
