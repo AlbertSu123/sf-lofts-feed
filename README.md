@@ -48,8 +48,14 @@ node scripts/facebook-monitor.mjs bookmarklet --out monitoring/facebook-capture-
 open monitoring/facebook-capture-bookmarklet.html
 ```
 
-4. Open `monitoring/facebook-watch.html`, then work through the links while logged into Facebook. Click the `Capture FB Housing` bookmarklet on each results page or group search page. You can also run it on Facebook Groups pages to discover visible group links for import.
-5. Save the copied JSON into the local inbox:
+4. Open `monitoring/facebook-watch.html`, then work through the links while logged into Facebook. Click the `Capture FB Housing` bookmarklet on each results page or group search page. It downloads a `fb-housing-capture-*.json` file and also copies the same JSON to the clipboard. You can also run it on Facebook Groups pages to discover visible group links for import.
+5. Import new capture downloads into the inbox, and optionally import housing-like groups from those same captures:
+
+```sh
+node scripts/facebook-monitor.mjs downloads --groups --housing-only
+```
+
+6. If download import is awkward, save the copied JSON into the local inbox manually:
 
 ```sh
 node scripts/facebook-monitor.mjs inbox --from-clipboard --name <group-or-search-name>
@@ -61,26 +67,26 @@ If clipboard access is awkward, paste into stdin instead:
 pbpaste | node scripts/facebook-monitor.mjs inbox - --name <group-or-search-name>
 ```
 
-6. Score, dedupe, and open the review page:
+7. Score, dedupe, and open the review page:
 
 ```sh
 node scripts/facebook-monitor.mjs scan --open
 ```
 
-7. After reviewing the scored output, mark scanned posts as seen:
+8. After reviewing the scored output, mark scanned posts as seen:
 
 ```sh
 node scripts/facebook-monitor.mjs scan --update-state
 ```
 
-8. To manually run scoring with every option:
+9. To manually run scoring with every option:
 
 ```sh
 node scripts/facebook-monitor.mjs score monitoring/facebook-inbox/*.json --out monitoring/facebook-candidates.json --snippets monitoring/facebook-candidates.generated.js --review monitoring/facebook-review.html --state monitoring/facebook-monitor-state.json --new-only
 open monitoring/facebook-review.html
 ```
 
-9. Review candidates. To preview an app-ready card for a selected handle or hash:
+10. Review candidates. To preview an app-ready card for a selected handle or hash:
 
 ```sh
 node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash>
@@ -88,7 +94,7 @@ node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --
 
 The review page also lets you select multiple pass/verify cards and copy a batch publish command.
 
-10. After verifying availability and poster identity, apply selected cards to the app:
+11. After verifying availability and poster identity, apply selected cards to the app:
 
 ```sh
 node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash> --apply

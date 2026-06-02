@@ -82,6 +82,7 @@ function usage() {
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
+  node scripts/facebook-monitor.mjs downloads [--downloads-dir ~/Downloads] [--out-dir monitoring/facebook-inbox] [--groups] [--housing-only] [--groups-out monitoring/facebook-groups.local.json] [--state monitoring/facebook-monitor-state.json] [--all]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
   node scripts/facebook-monitor.mjs scan [--inbox monitoring/facebook-inbox] [--open] [--all] [--update-state]
@@ -328,6 +329,13 @@ function readCaptureInput(args, opts) {
   return fs.readFileSync(path.resolve(process.cwd(), first), "utf8");
 }
 
+function resolveFsPath(file) {
+  const value = String(file || "");
+  if (value === "~") return process.env.HOME || value;
+  if (value.startsWith("~/")) return path.join(process.env.HOME || "", value.slice(2));
+  return path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
+}
+
 function normalizeCapturePayload(raw) {
   const text = String(raw || "").trim();
   if (!text) throw new Error("Capture input is empty.");
@@ -375,7 +383,9 @@ function normalizeGroupName(name, url) {
 }
 
 function isHousingGroup(entry) {
-  return Boolean(entry.housingLike) || GROUP_HOUSING_PATTERN.test(`${entry.name || ""}\n${entry.url || ""}\n${entry.notes || ""}`);
+  if (entry.housingLike === true) return true;
+  if (entry.housingLike === false) return false;
+  return GROUP_HOUSING_PATTERN.test(`${entry.name || ""}\n${entry.url || ""}\n${entry.notes || ""}`);
 }
 
 function extractGroupEntries(raw, opts = {}) {
@@ -427,9 +437,17 @@ function inferGroupName(url) {
 }
 
 function runGroups(args, opts) {
-  const outFile = outputPath(opts.out || "monitoring/facebook-groups.local.json");
   const raw = readCaptureInput(args, opts);
   const entries = extractGroupEntries(raw, opts);
+  const result = importGroupEntries(entries, {
+    ...opts,
+    out: opts.out || opts["groups-out"]
+  });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+function importGroupEntries(entries, opts) {
+  const outFile = outputPath(opts.out || opts["groups-out"] || "monitoring/facebook-groups.local.json");
   if (!entries.length) {
     console.error("No matching facebook.com/groups/... entries found.");
     process.exit(1);
@@ -457,14 +475,14 @@ function runGroups(args, opts) {
   }
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify({ groups }, null, 2) + "\n");
-  console.log(JSON.stringify({
+  return {
     out: path.relative(ROOT, outFile),
     added: added.length,
     total: groups.length,
     housingOnly: Boolean(opts["housing-only"]),
     matched: entries.length,
     groups: added
-  }, null, 2));
+  };
 }
 
 function slug(value) {
@@ -481,16 +499,21 @@ function timestampForFile() {
 
 function runInbox(args, opts) {
   const rows = normalizeCapturePayload(readCaptureInput(args, opts));
+  const result = writeInboxRows(rows, opts);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+function writeInboxRows(rows, opts) {
   const outDir = outputPath(opts["out-dir"] || "monitoring/facebook-inbox");
   fs.mkdirSync(outDir, { recursive: true });
   const name = slug(opts.name || rows[0]?.pageTitle || rows[0]?.sourceKind || "facebook-capture");
   const out = path.join(outDir, `${timestampForFile()}-${name}.json`);
   fs.writeFileSync(out, JSON.stringify(rows, null, 2) + "\n");
-  console.log(JSON.stringify({
+  return {
     saved: path.relative(ROOT, out),
     posts: rows.length,
     sourceName: name
-  }, null, 2));
+  };
 }
 
 function inboxFiles(dir) {
@@ -500,6 +523,87 @@ function inboxFiles(dir) {
     .filter(name => /\.(json|txt)$/i.test(name))
     .map(name => path.join(root, name))
     .sort();
+}
+
+function downloadCaptureFiles(opts = {}) {
+  const downloadsDir = resolveFsPath(opts["downloads-dir"] || path.join(process.env.HOME || ".", "Downloads"));
+  if (!fs.existsSync(downloadsDir)) return { downloadsDir, files: [] };
+  const files = fs.readdirSync(downloadsDir)
+    .filter(name => /^fb-housing-capture-.+\.json$/i.test(name))
+    .map(name => path.join(downloadsDir, name))
+    .sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+  return { downloadsDir, files };
+}
+
+function runDownloads(opts = {}) {
+  const { downloadsDir, files } = downloadCaptureFiles(opts);
+  const statePath = outputPath(opts.state || DEFAULT_STATE_PATH);
+  const state = readJsonIfExists(statePath, { seenHashes: [], importedDownloadHashes: [] });
+  const importedHashes = new Set(state.importedDownloadHashes || []);
+  const imported = [];
+  const skipped = [];
+  const groupImports = [];
+  let postCount = 0;
+
+  for (const file of files) {
+    const raw = fs.readFileSync(file, "utf8");
+    const hash = crypto.createHash("sha1").update(raw).digest("hex");
+    if (importedHashes.has(hash) && !opts.all) {
+      skipped.push({ file: path.relative(downloadsDir, file), reason: "already-imported" });
+      continue;
+    }
+
+    const rows = normalizeCapturePayload(raw);
+    const record = {
+      file: path.relative(downloadsDir, file),
+      hash,
+      posts: rows.length,
+      inbox: null,
+      groups: null
+    };
+    if (rows.length) {
+      record.inbox = writeInboxRows(rows, {
+        ...opts,
+        name: opts.name || path.basename(file, ".json")
+      });
+      postCount += rows.length;
+    }
+    if (opts.groups) {
+      const entries = extractGroupEntries(raw, opts);
+      if (entries.length) {
+        record.groups = importGroupEntries(entries, {
+          ...opts,
+          out: opts["groups-out"]
+        });
+        groupImports.push(record.groups);
+      }
+    }
+
+    imported.push(record);
+    importedHashes.add(hash);
+  }
+
+  const nextState = {
+    ...state,
+    importedDownloadHashes: [...importedHashes].sort(),
+    downloadImportsUpdatedAt: new Date().toISOString()
+  };
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  fs.writeFileSync(statePath, JSON.stringify(nextState, null, 2) + "\n");
+
+  console.log(JSON.stringify({
+    downloadsDir,
+    scanned: files.length,
+    imported: imported.length,
+    skipped: skipped.length,
+    posts: postCount,
+    groupFilesImported: groupImports.length,
+    state: path.relative(ROOT, statePath),
+    inboxDir: opts["out-dir"] || "monitoring/facebook-inbox",
+    groupsOut: opts["groups-out"] || "monitoring/facebook-groups.local.json",
+    imports: imported,
+    skippedFiles: skipped
+  }, null, 2));
 }
 
 function captureTimestamp(post, file) {
@@ -1254,6 +1358,8 @@ if (!cmd || cmd === "help") {
   runCoverage(opts);
 } else if (cmd === "next") {
   runNext(opts);
+} else if (cmd === "downloads") {
+  runDownloads(opts);
 } else if (cmd === "inbox") {
   try {
     runInbox(args, opts);

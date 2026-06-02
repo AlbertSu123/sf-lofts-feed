@@ -3,10 +3,32 @@
   const groupHousingPattern = /housing|apartment|apartments|apt\b|room|roommate|roommates|sublet|sublease|lease|rent|rental|loft|live.?work/i;
   const linkPattern = /facebook\.com\/(groups|marketplace|permalink|posts|share|photo)/i;
   const clean = value => String(value || "").replace(/\n{3,}/g, "\n\n").trim();
+  const fileSlug = value => String(value || "facebook")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50) || "facebook";
+  const captureStamp = () => new Date().toISOString().replace(/[:.]/g, "").replace("T", "-").replace("Z", "Z");
   const canonicalGroupUrl = href => {
     const match = String(href || "").match(/facebook\.com\/groups\/([^/?#]+)/i);
     return match ? `https://www.facebook.com/groups/${match[1]}` : "";
   };
+  function downloadPayload(payload) {
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const filename = `fb-housing-capture-${captureStamp()}-${fileSlug(document.title || location.hostname)}.json`;
+    a.href = url;
+    a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 1000);
+    return filename;
+  }
   const linkSeeds = Array.from(document.querySelectorAll([
     'a[href*="/marketplace/item"]',
     'a[href*="/groups/"][href*="/posts/"]',
@@ -82,11 +104,12 @@
     posts,
     groups: Array.from(groups.values())
   }, null, 2);
+  const filename = downloadPayload(payload);
   navigator.clipboard.writeText(payload).then(
-    () => alert(`Copied ${posts.length} housing-like posts and ${groups.size} visible groups to clipboard.`),
+    () => alert(`Downloaded ${filename} and copied ${posts.length} housing-like posts plus ${groups.size} visible groups to clipboard.`),
     () => {
       console.log(payload);
-      alert(`Clipboard write failed, but ${posts.length} posts and ${groups.size} groups were printed to the console.`);
+      alert(`Downloaded ${filename}. Clipboard write failed, but ${posts.length} posts and ${groups.size} groups were printed to the console.`);
     }
   );
 })();
