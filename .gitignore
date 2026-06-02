@@ -1,0 +1,8 @@
+monitoring/facebook-inbox/*
+!monitoring/facebook-inbox/.gitkeep
+monitoring/facebook-candidates*.json
+monitoring/facebook-candidates*.js
+monitoring/facebook-candidates*.md
+monitoring/facebook-searches*.json
+monitoring/facebook-searches*.md
+monitoring/facebook-groups.local.json

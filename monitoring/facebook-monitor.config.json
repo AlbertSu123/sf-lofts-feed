@@ -1,0 +1,73 @@
+{
+  "criteria": {
+    "maxPricePerBedroom": 2500,
+    "minBedrooms": 2,
+    "allowSharedRooms": true,
+    "preferredNeighborhoods": [
+      "SoMa",
+      "Mission",
+      "Potrero",
+      "Dogpatch",
+      "Mission Bay",
+      "South Beach",
+      "Inner Mission",
+      "Hayes Valley",
+      "Mid-Market",
+      "Nob Hill",
+      "Inner Richmond",
+      "Excelsior",
+      "Sunset"
+    ],
+    "preferredSignals": [
+      "loft",
+      "live/work",
+      "live work",
+      "warehouse",
+      "office",
+      "den",
+      "workspace",
+      "work from home",
+      "wfh",
+      "2 bath",
+      "2ba",
+      "2/bath",
+      "parking",
+      "garage",
+      "patio",
+      "deck",
+      "rooftop",
+      "caltrain",
+      "lease takeover",
+      "sublease"
+    ],
+    "rejectSignals": [
+      "application fee before tour",
+      "wire transfer",
+      "zelle deposit",
+      "western union",
+      "crypto only",
+      "income restricted",
+      "bmr lottery"
+    ]
+  },
+  "facebook": {
+    "scanCadenceHours": 6,
+    "cityMarketplace": "sanfrancisco",
+    "searchTerms": [
+      "San Francisco 2 bedroom loft rent",
+      "SF 2BR live work loft",
+      "SoMa loft lease takeover",
+      "Mission loft 2 bedroom",
+      "Dogpatch live work loft rent",
+      "Potrero loft 2 bedroom rent",
+      "2 bed office San Francisco rent",
+      "den office San Francisco apartment",
+      "warehouse loft San Francisco rent",
+      "artist loft San Francisco rent",
+      "lease takeover San Francisco 2 bed",
+      "sublease San Francisco 2 bedroom"
+    ],
+    "groupUrls": [],
+    "localGroupsFile": "monitoring/facebook-groups.local.json"
+  }
+}
