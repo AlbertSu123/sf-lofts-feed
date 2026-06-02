@@ -10,6 +10,7 @@ const CONFIG_PATH = path.join(ROOT, "monitoring/facebook-monitor.config.json");
 const DEFAULT_CANDIDATES_PATH = "monitoring/facebook-candidates.json";
 const DEFAULT_STATE_PATH = "monitoring/facebook-monitor-state.json";
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
+const GROUP_HOUSING_PATTERN = /housing|apartment|apartments|apt\b|room|roommate|roommates|sublet|sublease|lease|rent|rental|loft|live.?work/i;
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -77,7 +78,7 @@ function usage() {
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
   node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24] [--rotate] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
-  node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--out monitoring/facebook-groups.local.json]
+  node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
@@ -289,7 +290,7 @@ textarea{width:100%;height:150px;font:12px ui-monospace,SFMono-Regular,Menlo,mon
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style>
 <h1>Facebook Housing Capture Bookmarklet</h1>
-<p>Drag this button to the browser bookmarks bar. On a Facebook group search, post search, or Marketplace results page, click it to copy housing-like visible posts as JSON.</p>
+<p>Drag this button to the browser bookmarks bar. On Facebook group lists, group searches, post searches, or Marketplace results pages, click it to copy visible group links and housing-like posts as JSON.</p>
 <p><a class="bookmarklet" href="${href}">Capture FB Housing</a></p>
 <p>If dragging does not work, create a new bookmark named <code>Capture FB Housing</code> and paste this URL:</p>
 <textarea readonly>${escapeHtml(href)}</textarea>
@@ -356,6 +357,55 @@ function extractGroupUrls(text) {
   return [...urls];
 }
 
+function normalizeGroupName(name, url) {
+  const cleaned = cleanText(String(name || "").replace(/\s+/g, " "));
+  return cleaned && cleaned.length <= 140 ? cleaned : inferGroupName(url);
+}
+
+function isHousingGroup(entry) {
+  return Boolean(entry.housingLike) || GROUP_HOUSING_PATTERN.test(`${entry.name || ""}\n${entry.url || ""}\n${entry.notes || ""}`);
+}
+
+function extractGroupEntries(raw, opts = {}) {
+  const text = String(raw || "");
+  const entries = [];
+  try {
+    const parsed = JSON.parse(text);
+    const groupRows = Array.isArray(parsed)
+      ? parsed.filter(row => row && (row.sourceKind === "group" || row.groupUrl || row.url))
+      : parsed.groups || parsed.groupUrls || [];
+    for (const row of groupRows) {
+      const entry = typeof row === "string" ? { url: row } : row;
+      const url = canonicalGroupUrl(entry.url || entry.groupUrl || "");
+      if (!url) continue;
+      entries.push({
+        name: normalizeGroupName(entry.name || entry.title || entry.label, url),
+        url,
+        priority: entry.priority || opts.priority || "normal",
+        notes: entry.notes || (entry.pageTitle ? `Captured from ${entry.pageTitle}` : "Imported via facebook-monitor groups"),
+        housingLike: isHousingGroup({ ...entry, url })
+      });
+    }
+  } catch {
+    // Fall through to URL extraction below.
+  }
+  for (const url of extractGroupUrls(text)) {
+    entries.push({
+      name: inferGroupName(url),
+      url,
+      priority: opts.priority || "normal",
+      notes: "Imported via facebook-monitor groups",
+      housingLike: isHousingGroup({ url })
+    });
+  }
+  const seen = new Set();
+  return entries.filter(entry => {
+    if (!entry.url || seen.has(entry.url)) return false;
+    seen.add(entry.url);
+    return !opts["housing-only"] || isHousingGroup(entry);
+  });
+}
+
 function inferGroupName(url) {
   const id = url.replace(/\/+$/, "").split("/").pop() || "Facebook group";
   return id
@@ -367,9 +417,9 @@ function inferGroupName(url) {
 function runGroups(args, opts) {
   const outFile = outputPath(opts.out || "monitoring/facebook-groups.local.json");
   const raw = readCaptureInput(args, opts);
-  const urls = extractGroupUrls(raw);
-  if (!urls.length) {
-    console.error("No facebook.com/groups/... URLs found.");
+  const entries = extractGroupEntries(raw, opts);
+  if (!entries.length) {
+    console.error("No matching facebook.com/groups/... entries found.");
     process.exit(1);
   }
   const existing = readJsonIfExists(outFile, { groups: [] });
@@ -381,17 +431,17 @@ function runGroups(args, opts) {
     }));
   const seen = new Set(groups.map(group => group.url));
   const added = [];
-  for (const url of urls) {
-    if (seen.has(url)) continue;
+  for (const entry of entries) {
+    if (seen.has(entry.url)) continue;
     const group = {
-      name: inferGroupName(url),
-      url,
-      priority: opts.priority || "normal",
-      notes: "Imported via facebook-monitor groups"
+      name: entry.name || inferGroupName(entry.url),
+      url: entry.url,
+      priority: entry.priority || opts.priority || "normal",
+      notes: entry.notes || "Imported via facebook-monitor groups"
     };
     groups.push(group);
     added.push(group);
-    seen.add(url);
+    seen.add(entry.url);
   }
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify({ groups }, null, 2) + "\n");
@@ -399,6 +449,8 @@ function runGroups(args, opts) {
     out: path.relative(ROOT, outFile),
     added: added.length,
     total: groups.length,
+    housingOnly: Boolean(opts["housing-only"]),
+    matched: entries.length,
     groups: added
   }, null, 2));
 }

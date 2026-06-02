@@ -15,6 +15,12 @@ pbpaste | node scripts/facebook-monitor.mjs groups - --priority high
 node scripts/facebook-monitor.mjs status
 ```
 
+You can also run the capture bookmarklet on Facebook Groups pages such as `facebook.com/groups/feed/` or your joined-groups list, then import only housing-like groups:
+
+```sh
+pbpaste | node scripts/facebook-monitor.mjs groups - --priority high --housing-only
+```
+
 Create the next-run briefing and refreshed watch page:
 
 ```sh
@@ -36,7 +42,7 @@ node scripts/facebook-monitor.mjs bookmarklet --out monitoring/facebook-capture-
 open monitoring/facebook-capture-bookmarklet.html
 ```
 
-4. Open `monitoring/facebook-watch.html`, then work through the links while logged into Facebook. Click the `Capture FB Housing` bookmarklet on each results page or group search page.
+4. Open `monitoring/facebook-watch.html`, then work through the links while logged into Facebook. Click the `Capture FB Housing` bookmarklet on each results page or group search page. You can also run it on Facebook Groups pages to discover visible group links for import.
 5. Save the copied JSON into the local inbox:
 
 ```sh

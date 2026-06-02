@@ -1,7 +1,12 @@
 (() => {
   const housingPattern = /\$|rent|lease|sublet|sublease|takeover|bed|bd|br|loft|apartment|office|den|room/i;
+  const groupHousingPattern = /housing|apartment|apartments|apt\b|room|roommate|roommates|sublet|sublease|lease|rent|rental|loft|live.?work/i;
   const linkPattern = /facebook\.com\/(groups|marketplace|permalink|posts|share|photo)/i;
   const clean = value => String(value || "").replace(/\n{3,}/g, "\n\n").trim();
+  const canonicalGroupUrl = href => {
+    const match = String(href || "").match(/facebook\.com\/groups\/([^/?#]+)/i);
+    return match ? `https://www.facebook.com/groups/${match[1]}` : "";
+  };
   const linkSeeds = Array.from(document.querySelectorAll([
     'a[href*="/marketplace/item"]',
     'a[href*="/groups/"][href*="/posts/"]',
@@ -50,12 +55,38 @@
     });
   }
   const posts = Array.from(uniq.values());
-  const payload = JSON.stringify(posts, null, 2);
+  const groups = Array.from(document.querySelectorAll('a[href*="/groups/"]'))
+    .map(a => {
+      const url = canonicalGroupUrl(a.href);
+      if (!url || /\/(posts|permalink|search|media|files|members|about|photos)\b/i.test(a.href)) return null;
+      const card = a.closest('[role="listitem"], [role="article"], [data-visualcompletion], li, div') || a;
+      const cardText = clean(card.innerText || card.textContent);
+      const linkText = clean(a.innerText || a.textContent);
+      const name = (linkText.length >= 3 && linkText.length <= 120 ? linkText : cardText.split("\n").find(line => line.length >= 3 && line.length <= 120)) || url;
+      return {
+        name,
+        url,
+        housingLike: groupHousingPattern.test(`${name}\n${cardText}\n${url}`),
+        capturedAt: new Date().toISOString(),
+        pageTitle: document.title,
+        pageUrl: location.href,
+        sourceKind: "group"
+      };
+    })
+    .filter(Boolean)
+    .reduce((map, group) => map.set(group.url, group), new Map());
+  const payload = JSON.stringify({
+    capturedAt: new Date().toISOString(),
+    pageTitle: document.title,
+    pageUrl: location.href,
+    posts,
+    groups: Array.from(groups.values())
+  }, null, 2);
   navigator.clipboard.writeText(payload).then(
-    () => alert(`Copied ${posts.length} housing-like Facebook posts to clipboard.`),
+    () => alert(`Copied ${posts.length} housing-like posts and ${groups.size} visible groups to clipboard.`),
     () => {
       console.log(payload);
-      alert(`Clipboard write failed, but ${posts.length} posts were printed to the console.`);
+      alert(`Clipboard write failed, but ${posts.length} posts and ${groups.size} groups were printed to the console.`);
     }
   );
 })();
