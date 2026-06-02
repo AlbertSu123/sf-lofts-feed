@@ -2421,11 +2421,36 @@ function numberFromMatch(match) {
 }
 
 function extractPrice(text) {
-  const prices = Array.from(text.matchAll(/\$\s*([0-9][0-9,]{2,5})(?:\s*(?:\/|per)?\s*(?:mo|month|mth|monthly))?/gi))
-    .map(m => Number(m[1].replace(/,/g, "")))
-    .filter(n => n >= 1000 && n <= 20000);
-  if (!prices.length) return null;
-  return Math.min(...prices);
+  const source = String(text || "");
+  const candidates = Array.from(source.matchAll(/\$\s*([0-9][0-9,]{2,5})(?:\s*(?:\/|per)?\s*(?:mo|month|mth|monthly))?/gi))
+    .map(match => {
+      const amount = Number(match[1].replace(/,/g, ""));
+      const start = match.index || 0;
+      const end = start + match[0].length;
+      const before = source.slice(Math.max(0, start - 64), start).toLowerCase();
+      const after = source.slice(end, Math.min(source.length, end + 64)).toLowerCase();
+      const immediateAfter = source.slice(end, Math.min(source.length, end + 28)).toLowerCase();
+      const context = `${before} ${match[0].toLowerCase()} ${after}`;
+      const monthlySignal = /(?:\/|per)?\s*(?:mo|month|mth|monthly)\b/i.test(match[0]) || /\bper month\b|\bmonthly\b/i.test(after);
+      const rentSignal = /\b(rent|rental|asking|listed|lease|monthly|month|mo|per month)\b|\/\s*(?:mo|month|mth)\b/i.test(context);
+      const depositBefore = /\b(deposit|security|move[-\s]?in|move in|application|app fee|broker|cleaning|holding|admin fee|credit check|background check)\b/i.test(before);
+      const depositAfter = /\b(deposit|security|move[-\s]?in|move in|application|app fee|broker|cleaning|holding|admin fee|credit check|background check)\b/i.test(immediateAfter);
+      return {
+        amount,
+        rentSignal,
+        monthlySignal,
+        depositSignal: depositBefore || (depositAfter && !monthlySignal && !rentSignal)
+      };
+    })
+    .filter(row => row.amount >= 1000 && row.amount <= 20000);
+  const viable = candidates.filter(row => !row.depositSignal || row.rentSignal || row.monthlySignal);
+  const monthly = viable.filter(row => row.monthlySignal && !row.depositSignal);
+  if (monthly.length) return Math.max(...monthly.map(row => row.amount));
+  const rentLike = viable.filter(row => row.rentSignal && !row.depositSignal);
+  if (rentLike.length) return Math.max(...rentLike.map(row => row.amount));
+  const unlabeled = viable.filter(row => !row.depositSignal);
+  if (unlabeled.length) return Math.max(...unlabeled.map(row => row.amount));
+  return null;
 }
 
 function extractBedrooms(text) {
@@ -2433,8 +2458,13 @@ function extractBedrooms(text) {
     ...text.matchAll(/(\d+(?:\.\d+)?)\s*(?:bd|br|bed(?:room)?s?|bdrm)s?\b/gi),
     ...text.matchAll(/\b(\d+)b(?:\/|\s*)\d+b\b/gi)
   ];
-  if (!matches.length) return /\bstudio\b/i.test(text) ? 0 : null;
-  return Math.max(...matches.map(m => numberFromMatch(m[1])));
+  const numeric = matches.map(m => numberFromMatch(m[1]));
+  const wordValues = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+  for (const match of text.matchAll(/\b(one|two|three|four|five|six)\s*(?:bd|br|bed(?:room)?s?|bdrm)s?\b/gi)) {
+    numeric.push(wordValues[match[1].toLowerCase()]);
+  }
+  if (!numeric.length) return /\bstudio\b/i.test(text) ? 0 : null;
+  return Math.max(...numeric);
 }
 
 function extractBathrooms(text) {
@@ -2454,7 +2484,8 @@ function extractSqft(text) {
 }
 
 function hasSharedSignal(text) {
-  return /\b(room in|private room|room available|shared|roommate|housemate)\b/i.test(text);
+  return /\b(room in|private room|room available|roommate|housemate|co-?living)\b/i.test(text) ||
+    /\bshared\s+(?:apartment|flat|house|home|unit|bath|bathroom|kitchen|space|room)\b/i.test(text);
 }
 
 function inferLocation(text, config) {

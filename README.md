@@ -52,6 +52,12 @@ For a fuller readiness check, including pending capture downloads, generated loc
 node scripts/facebook-monitor.mjs doctor
 ```
 
+Run the local monitor self-test after scoring or import changes:
+
+```sh
+node scripts/test-facebook-monitor.mjs
+```
+
 Check which configured groups have not produced a recent capture:
 
 ```sh
@@ -144,6 +150,8 @@ node scripts/facebook-monitor.mjs scan --open
 ```
 
 This also refreshes `monitoring/facebook-digest.md`, a triage summary that groups pass/verify leads into ready-to-message, missing-price, missing-bedroom, shared-room, and skip queues.
+
+The scorer treats deposit, application-fee, broker-fee, and move-in-cash amounts separately from monthly rent, so a cheaper deposit should not let an over-budget rent slip through the `$2,500/bedroom` gate.
 
 9. After reviewing the scored output, mark scanned posts as seen:
 
