@@ -5,6 +5,7 @@ monitoring/facebook-candidates*.js
 monitoring/facebook-candidates*.md
 monitoring/facebook-searches*.json
 monitoring/facebook-searches*.md
+monitoring/facebook-next*.md
 monitoring/facebook-watch*.html
 monitoring/facebook-watch*.md
 monitoring/facebook-open-watch*.sh

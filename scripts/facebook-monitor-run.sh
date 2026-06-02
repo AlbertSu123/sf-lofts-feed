@@ -3,6 +3,7 @@ set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LIMIT="${FACEBOOK_MONITOR_LIMIT:-60}"
+NEXT_MD="${FACEBOOK_MONITOR_NEXT_MD:-monitoring/facebook-next.md}"
 WATCH_HTML="${FACEBOOK_MONITOR_WATCH_HTML:-monitoring/facebook-watch.html}"
 WATCH_MD="${FACEBOOK_MONITOR_WATCH_MD:-monitoring/facebook-watch.md}"
 OPEN_SCRIPT="${FACEBOOK_MONITOR_OPEN_SCRIPT:-monitoring/facebook-open-watch.sh}"
@@ -18,14 +19,15 @@ if [ -z "$NODE_BIN" ]; then
 fi
 
 cd "$ROOT"
-"$NODE_BIN" scripts/facebook-monitor.mjs watch \
+"$NODE_BIN" scripts/facebook-monitor.mjs next \
+  --out "$NEXT_MD" \
+  --watch "$WATCH_MD" \
   --html "$WATCH_HTML" \
-  --out "$WATCH_MD" \
   --script "$OPEN_SCRIPT" \
-  --limit "$LIMIT" >/tmp/sf-lofts-facebook-monitor-watch.json
+  --limit "$LIMIT" >/tmp/sf-lofts-facebook-monitor-next.json
 
 open "$ROOT/$WATCH_HTML"
 
 if command -v osascript >/dev/null 2>&1; then
-  osascript -e 'display notification "Facebook housing watch batch is ready." with title "SF Lofts Feed" subtitle "Open the batch, capture promising posts, then score the inbox."' >/dev/null 2>&1 || true
+  osascript -e 'display notification "Facebook housing next-run briefing is ready." with title "SF Lofts Feed" subtitle "Watch page refreshed; capture posts, then scan the inbox."' >/dev/null 2>&1 || true
 fi

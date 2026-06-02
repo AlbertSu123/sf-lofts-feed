@@ -77,6 +77,7 @@ function usage() {
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
+  node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
   node scripts/facebook-monitor.mjs scan [--inbox monitoring/facebook-inbox] [--open] [--all] [--update-state]
@@ -213,7 +214,7 @@ ${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeH
     for (const row of rows) childProcess.spawnSync("open", [row.url], { stdio: "ignore" });
   }
 
-  console.log(JSON.stringify({
+  const summary = {
     generatedAt: now,
     searches: rows.length,
     groups: (config.facebook.groups || []).length,
@@ -221,7 +222,9 @@ ${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeH
     html: htmlOut,
     openScript: openOut,
     opened: Boolean(opts.open)
-  }, null, 2));
+  };
+  if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
+  return summary;
 }
 
 function escapeHtml(value) {
@@ -415,21 +418,124 @@ function runScan(opts) {
   if (opts.open) childProcess.spawnSync("open", [outputPath(scoreOpts.review)], { stdio: "ignore" });
 }
 
-function runStatus() {
-  const config = loadConfig();
-  const files = inboxFiles("monitoring/facebook-inbox");
-  const candidatesPath = outputPath(DEFAULT_CANDIDATES_PATH);
+function countStatuses(candidates) {
+  const counts = { pass: 0, verify: 0, review: 0, reject: 0, duplicate: 0 };
+  for (const candidate of candidates) {
+    counts[candidate.status] = (counts[candidate.status] || 0) + 1;
+  }
+  return counts;
+}
+
+function relativeOut(file) {
+  return path.relative(ROOT, outputPath(file));
+}
+
+function monitorSnapshot(config = loadConfig(), opts = {}) {
+  const inboxDir = opts.inbox || "monitoring/facebook-inbox";
+  const files = inboxFiles(inboxDir);
+  const candidatesFile = opts.candidates || DEFAULT_CANDIDATES_PATH;
+  const candidatesPath = outputPath(candidatesFile);
   const statePath = outputPath("monitoring/facebook-monitor-state.json");
   const watchRows = generateSearches(config);
-  console.log(JSON.stringify({
+  const candidates = fs.existsSync(candidatesPath) ? readJson(candidatesPath) : [];
+  return {
     groups: config.facebook.groups.length,
     groupNames: config.facebook.groups.map(group => group.name),
     baselineSearches: (config.facebook.searchTerms || []).length * 2,
     totalWatchSearches: watchRows.length,
     inboxFiles: files.length,
-    candidates: fs.existsSync(candidatesPath) ? readJson(candidatesPath).length : 0,
+    candidates: candidates.length,
+    candidateStatus: countStatuses(candidates),
     seenHashes: fs.existsSync(statePath) ? (readJson(statePath).seenHashes || []).length : 0,
     cadenceHours: config.facebook.scanCadenceHours || 6
+  };
+}
+
+function runStatus() {
+  console.log(JSON.stringify(monitorSnapshot(), null, 2));
+}
+
+function runNext(opts) {
+  const config = loadConfig();
+  const out = opts.out || "monitoring/facebook-next.md";
+  const watch = generateWatchBatch(config, {
+    out: opts.watch || "monitoring/facebook-watch.md",
+    html: opts.html || "monitoring/facebook-watch.html",
+    script: opts.script || "monitoring/facebook-open-watch.sh",
+    limit: opts.limit || 40,
+    quiet: true
+  });
+  const snapshot = monitorSnapshot(config);
+  const generatedAt = new Date().toISOString();
+  const groupLines = config.facebook.groups.length
+    ? config.facebook.groups.map(group => `- ${group.name} (${group.priority || "normal"}): ${group.url}`)
+    : [
+      "- No private groups configured yet.",
+      "- Paste copied group links into the local group list: `pbpaste | node scripts/facebook-monitor.mjs groups - --priority high`"
+    ];
+  const commands = {
+    importGroups: "pbpaste | node scripts/facebook-monitor.mjs groups - --priority high",
+    captureInbox: "pbpaste | node scripts/facebook-monitor.mjs inbox - --name <group-or-search-name>",
+    scan: "node scripts/facebook-monitor.mjs scan --open",
+    markSeen: "node scripts/facebook-monitor.mjs scan --update-state",
+    publishPreview: "node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash>",
+    publishApply: "node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash> --apply"
+  };
+  const counts = snapshot.candidateStatus;
+  const md = [
+    "# Facebook Housing Monitor Next Run",
+    "",
+    `Generated: ${generatedAt}`,
+    `Cadence target: every ${snapshot.cadenceHours} hours`,
+    `Bedroom budget gate: $2,500 per bedroom`,
+    "",
+    "## Coverage",
+    "",
+    `Configured private groups: ${snapshot.groups}`,
+    `Watch searches this run: ${watch.searches} of ${snapshot.totalWatchSearches}`,
+    "",
+    ...groupLines,
+    "",
+    "## Current Queue",
+    "",
+    `Inbox capture files: ${snapshot.inboxFiles}`,
+    `Candidates: ${snapshot.candidates}`,
+    `Candidate status counts: pass ${counts.pass || 0}, verify ${counts.verify || 0}, review ${counts.review || 0}, reject ${counts.reject || 0}, duplicate ${counts.duplicate || 0}`,
+    `Seen post hashes: ${snapshot.seenHashes}`,
+    "",
+    "## Files",
+    "",
+    `Watch page: ${relativeOut(watch.html || "monitoring/facebook-watch.html")}`,
+    `Watch markdown: ${relativeOut(watch.markdown)}`,
+    `Open script: ${relativeOut(watch.openScript)}`,
+    `Review page: ${relativeOut("monitoring/facebook-review.html")}`,
+    "",
+    "## Next Commands",
+    "",
+    "```sh",
+    commands.importGroups,
+    `open ${shellQuote(outputPath(watch.html || "monitoring/facebook-watch.html"))}`,
+    commands.captureInbox,
+    commands.scan,
+    commands.markSeen,
+    commands.publishPreview,
+    commands.publishApply,
+    "```",
+    "",
+    "Private Facebook group posts still need a logged-in browser session. This monitor only organizes the watch/capture/review loop."
+  ].join("\n") + "\n";
+  fs.writeFileSync(outputPath(out), md);
+  if (opts.open) childProcess.spawnSync("open", [outputPath(watch.html || "monitoring/facebook-watch.html")], { stdio: "ignore" });
+  console.log(JSON.stringify({
+    out: relativeOut(out),
+    watchHtml: relativeOut(watch.html || "monitoring/facebook-watch.html"),
+    openScript: relativeOut(watch.openScript),
+    groups: snapshot.groups,
+    searches: watch.searches,
+    inboxFiles: snapshot.inboxFiles,
+    candidates: snapshot.candidates,
+    candidateStatus: snapshot.candidateStatus,
+    commands
   }, null, 2));
 }
 
@@ -917,6 +1023,8 @@ if (!cmd || cmd === "help") {
   }
 } else if (cmd === "status") {
   runStatus();
+} else if (cmd === "next") {
+  runNext(opts);
 } else if (cmd === "inbox") {
   try {
     runInbox(args, opts);

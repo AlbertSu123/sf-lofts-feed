@@ -15,7 +15,13 @@ pbpaste | node scripts/facebook-monitor.mjs groups - --priority high
 node scripts/facebook-monitor.mjs status
 ```
 
-2. Generate the watch batch:
+Create the next-run briefing and refreshed watch page:
+
+```sh
+node scripts/facebook-monitor.mjs next --limit 40 --open
+```
+
+2. If you only need the watch batch without the next-run briefing:
 
 ```sh
 node scripts/facebook-monitor.mjs watch --html monitoring/facebook-watch.html --limit 40
@@ -86,7 +92,7 @@ To remove it:
 scripts/uninstall-facebook-monitor-agent.sh
 ```
 
-The agent only opens the local watch batch and shows a macOS notification; it does not scrape Facebook in the background.
+The agent creates `monitoring/facebook-next.md`, refreshes the local watch batch, opens the watch page, and shows a macOS notification; it does not scrape Facebook in the background.
 
 You can still run a single scan prompt manually:
 
