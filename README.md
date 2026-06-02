@@ -70,6 +70,8 @@ Run the full monitoring loop. This imports any new `fb-housing-capture-*.json` f
 node scripts/facebook-monitor.mjs run --limit 40 --open-watch --open-review
 ```
 
+`--open-watch` opens the generated local checklist page, not every Facebook search URL. Open rows from that checklist as you work through them, or use the generated `monitoring/facebook-open-watch.sh` / `--open-links` when you intentionally want to launch the whole batch at once.
+
 `run` dedupes downloaded captures by hash in `monitoring/facebook-monitor-state.json`. It does not mark scored posts as reviewed; use `scan --update-state` after you have looked at the review page. The generated watch batch advances local rotation cursors so large group lists are covered across multiple runs instead of showing the same first links every time. It also prioritizes stale or never-captured groups first and round-robins those groups so later groups do not get starved by a larger search-term list.
 
 Create only the next-run briefing and refreshed watch page:
@@ -78,7 +80,7 @@ Create only the next-run briefing and refreshed watch page:
 node scripts/facebook-monitor.mjs next --limit 40 --open
 ```
 
-Use `--no-focus-stale` to stop stale/never groups from jumping to the front, or `--no-rotate` when you want a static batch.
+Use `--no-focus-stale` to stop stale/never groups from jumping to the front, `--no-rotate` when you want a static batch, or `--open-links` when you deliberately want to open every search URL in the batch.
 
 2. If you only need the watch batch without the next-run briefing:
 

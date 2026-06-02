@@ -94,15 +94,15 @@ function usage() {
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
   node scripts/facebook-monitor.mjs setup [--limit 40] [--open] [--rotate] [--bookmarklet monitoring/facebook-capture-bookmarklet.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html]
   node scripts/facebook-monitor.mjs discover [--out monitoring/facebook-discovery.md] [--html monitoring/facebook-discovery.html] [--script monitoring/facebook-open-discovery.sh] [--open] [--terms "SF housing,SF apartments"]
-  node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24] [--rotate] [--state monitoring/facebook-monitor-state.json]
+  node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--open-links] [--limit 24] [--rotate] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
   node scripts/facebook-monitor.mjs seed-groups [--seeds monitoring/facebook-group-seeds.json] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs doctor [--downloads-dir ~/Downloads] [--state monitoring/facebook-monitor-state.json] [--candidates monitoring/facebook-candidates.json] [--inbox monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
-  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html] [--open] [--open-watch] [--open-review] [--open-discovery] [--no-downloads] [--no-groups] [--no-housing-only] [--no-discovery] [--all] [--state monitoring/facebook-monitor-state.json]
-  node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
+  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html] [--open] [--open-watch] [--open-links] [--open-review] [--open-discovery] [--no-downloads] [--no-groups] [--no-housing-only] [--no-discovery] [--all] [--state monitoring/facebook-monitor-state.json]
+  node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--open-links] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs downloads [--downloads-dir ~/Downloads] [--out-dir monitoring/facebook-inbox] [--groups] [--housing-only] [--groups-out monitoring/facebook-groups.local.json] [--state monitoring/facebook-monitor-state.json] [--all]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
@@ -359,8 +359,9 @@ function generateWatchBatch(config, opts) {
   const selectedRotatedRows = rows.filter(row => !isFocused(row)).length;
   const capturePath = "monitoring/facebook-capture-snippet.js";
   const mdOut = opts.out || "monitoring/facebook-watch.md";
-  const htmlOut = opts.html || null;
+  const htmlOut = opts.html || (opts.open ? "monitoring/facebook-watch.html" : null);
   const openOut = opts.script || "monitoring/facebook-open-watch.sh";
+  const openLinks = Boolean(opts.openLinks || opts["open-links"]);
   const now = new Date().toISOString();
   const nextCursor = rotatedRows.length ? (cursor + selectedRotatedRows) % rotatedRows.length : 0;
   const focusAdvance = selectedFocusedGroups ? Math.ceil(selectedFocusedRows / selectedFocusedGroups) : 0;
@@ -470,7 +471,10 @@ sync();
   fs.writeFileSync(outputPath(openOut), sh, { mode: 0o755 });
   fs.chmodSync(outputPath(openOut), 0o755);
 
-  if (opts.open) {
+  const openedPage = Boolean(opts.open && htmlOut);
+  if (openedPage) childProcess.spawnSync("open", [outputPath(htmlOut)], { stdio: "ignore" });
+
+  if (openLinks) {
     for (const row of rows) childProcess.spawnSync("open", [row.url], { stdio: "ignore" });
   }
 
@@ -498,7 +502,9 @@ sync();
     markdown: mdOut,
     html: htmlOut,
     openScript: openOut,
-    opened: Boolean(opts.open),
+    opened: openedPage || openLinks,
+    openedPage,
+    openedLinks: openLinks,
     rotation: opts.rotate ? {
       enabled: true,
       state: path.relative(ROOT, statePath),
@@ -1265,6 +1271,7 @@ function runNext(opts) {
     state: opts.state || DEFAULT_STATE_PATH,
     focusGroupUrls: focusRows.map(group => group.url),
     rotate,
+    "open-links": opts["open-links"] || opts.openLinks,
     quiet: true
   });
   const snapshot = monitorSnapshot(config, { ...opts, candidates: candidatesFile });
@@ -1388,6 +1395,8 @@ function runNext(opts) {
       staleGroups: coverage.staleGroups,
       neverCapturedGroups: coverage.neverCapturedGroups
     },
+    opened: Boolean(opts.open),
+    openedLinks: Boolean(opts["open-links"] || opts.openLinks),
     setupGaps: setupLines,
     commands
   };
@@ -1454,6 +1463,7 @@ function runMonitorLoop(opts = {}) {
     limit: opts.limit || 40,
     state,
     open: openWatch,
+    "open-links": opts["open-links"] || opts.openLinks,
     quiet: true
   });
   const snapshot = monitorSnapshot(loadConfig({ ...opts, "groups-out": groupsOut }), {
@@ -1482,6 +1492,7 @@ function runMonitorLoop(opts = {}) {
     status: snapshot,
     opened: {
       watch: openWatch,
+      watchLinks: Boolean(opts["open-links"] || opts.openLinks),
       review: openReview,
       discovery: openDiscovery
     },
