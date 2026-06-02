@@ -7,6 +7,14 @@ Static GitHub Pages feed for SF apartment/loft leads.
 Facebook private groups do not expose a clean public feed, so the efficient path is a human-in-the-browser monitor:
 
 1. Add private group URLs to `monitoring/facebook-groups.local.json` using the example in `monitoring/facebook-monitor.config.json`.
+
+You can paste group URLs instead of editing JSON:
+
+```sh
+pbpaste | node scripts/facebook-monitor.mjs groups - --priority high
+node scripts/facebook-monitor.mjs status
+```
+
 2. Generate the watch batch:
 
 ```sh

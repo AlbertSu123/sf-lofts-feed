@@ -47,7 +47,7 @@ function normalizeGroups(input) {
     .filter(entry => entry && entry.url)
     .map((entry, i) => ({
       name: entry.name || `Group ${i + 1}`,
-      url: entry.url,
+      url: canonicalGroupUrl(entry.url),
       priority: entry.priority || "normal",
       notes: entry.notes || ""
     }));
@@ -75,6 +75,8 @@ function usage() {
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
   node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
+  node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--out monitoring/facebook-groups.local.json]
+  node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
   node scripts/facebook-monitor.mjs scan [--inbox monitoring/facebook-inbox] [--open] [--all] [--update-state]
@@ -94,6 +96,11 @@ function marketplaceSearchUrl(term, city) {
 function groupSearchUrl(groupUrl, term) {
   const clean = groupUrl.replace(/[?#].*$/, "").replace(/\/+$/, "");
   return `${clean}/search/?q=${encodeURIComponent(term)}`;
+}
+
+function canonicalGroupUrl(url) {
+  const match = String(url || "").match(/facebook\.com\/groups\/([A-Za-z0-9._-]+)/i);
+  return match ? `https://www.facebook.com/groups/${match[1]}` : String(url || "").replace(/[?#].*$/, "").replace(/\/+$/, "");
 }
 
 function generateSearches(config) {
@@ -301,6 +308,64 @@ function normalizeCapturePayload(raw) {
   }
 }
 
+function extractGroupUrls(text) {
+  const urls = new Set();
+  for (const match of String(text || "").matchAll(/https?:\/\/(?:www\.)?facebook\.com\/groups\/[A-Za-z0-9._-]+\/?/gi)) {
+    urls.add(canonicalGroupUrl(match[0]));
+  }
+  for (const match of String(text || "").matchAll(/facebook\.com\/groups\/([A-Za-z0-9._-]+)/gi)) {
+    urls.add(canonicalGroupUrl(`https://www.facebook.com/groups/${match[1]}`));
+  }
+  return [...urls];
+}
+
+function inferGroupName(url) {
+  const id = url.replace(/\/+$/, "").split("/").pop() || "Facebook group";
+  return id
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, ch => ch.toUpperCase())
+    .trim() || "Facebook group";
+}
+
+function runGroups(args, opts) {
+  const outFile = outputPath(opts.out || "monitoring/facebook-groups.local.json");
+  const raw = readCaptureInput(args, opts);
+  const urls = extractGroupUrls(raw);
+  if (!urls.length) {
+    console.error("No facebook.com/groups/... URLs found.");
+    process.exit(1);
+  }
+  const existing = readJsonIfExists(outFile, { groups: [] });
+  const groups = normalizeGroups(existing.groupUrls)
+    .concat(normalizeGroups(existing.groups))
+    .map(group => ({
+      ...group,
+      url: canonicalGroupUrl(group.url)
+    }));
+  const seen = new Set(groups.map(group => group.url));
+  const added = [];
+  for (const url of urls) {
+    if (seen.has(url)) continue;
+    const group = {
+      name: inferGroupName(url),
+      url,
+      priority: opts.priority || "normal",
+      notes: "Imported via facebook-monitor groups"
+    };
+    groups.push(group);
+    added.push(group);
+    seen.add(url);
+  }
+  fs.mkdirSync(path.dirname(outFile), { recursive: true });
+  fs.writeFileSync(outFile, JSON.stringify({ groups }, null, 2) + "\n");
+  console.log(JSON.stringify({
+    out: path.relative(ROOT, outFile),
+    added: added.length,
+    total: groups.length,
+    groups: added
+  }, null, 2));
+}
+
 function slug(value) {
   return String(value || "facebook-capture")
     .toLowerCase()
@@ -348,6 +413,24 @@ function runScan(opts) {
   if (!opts.all) scoreOpts["new-only"] = true;
   runScore(files, scoreOpts);
   if (opts.open) childProcess.spawnSync("open", [outputPath(scoreOpts.review)], { stdio: "ignore" });
+}
+
+function runStatus() {
+  const config = loadConfig();
+  const files = inboxFiles("monitoring/facebook-inbox");
+  const candidatesPath = outputPath(DEFAULT_CANDIDATES_PATH);
+  const statePath = outputPath("monitoring/facebook-monitor-state.json");
+  const watchRows = generateSearches(config);
+  console.log(JSON.stringify({
+    groups: config.facebook.groups.length,
+    groupNames: config.facebook.groups.map(group => group.name),
+    baselineSearches: (config.facebook.searchTerms || []).length * 2,
+    totalWatchSearches: watchRows.length,
+    inboxFiles: files.length,
+    candidates: fs.existsSync(candidatesPath) ? readJson(candidatesPath).length : 0,
+    seenHashes: fs.existsSync(statePath) ? (readJson(statePath).seenHashes || []).length : 0,
+    cadenceHours: config.facebook.scanCadenceHours || 6
+  }, null, 2));
 }
 
 function escapeMd(value) {
@@ -825,6 +908,15 @@ if (!cmd || cmd === "help") {
   generateWatchBatch(loadConfig(), opts);
 } else if (cmd === "bookmarklet") {
   generateBookmarklet(opts);
+} else if (cmd === "groups") {
+  try {
+    runGroups(args, opts);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+} else if (cmd === "status") {
+  runStatus();
 } else if (cmd === "inbox") {
   try {
     runInbox(args, opts);
