@@ -8,6 +8,8 @@ import { pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const CONFIG_PATH = path.join(ROOT, "monitoring/facebook-monitor.config.json");
 const DEFAULT_CANDIDATES_PATH = "monitoring/facebook-candidates.json";
+const DEFAULT_STATE_PATH = "monitoring/facebook-monitor-state.json";
+const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -73,11 +75,11 @@ function parseArgs(argv) {
 function usage() {
   console.log(`Usage:
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
-  node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24]
+  node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24] [--rotate] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
-  node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open]
+  node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
   node scripts/facebook-monitor.mjs scan [--inbox monitoring/facebook-inbox] [--open] [--all] [--update-state]
@@ -125,6 +127,16 @@ function generateSearches(config) {
   return rows;
 }
 
+function sortedSearchRows(rows) {
+  return [...rows].sort((a, b) => (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1));
+}
+
+function rotateRows(rows, cursor) {
+  if (!rows.length) return [];
+  const offset = ((Number(cursor) || 0) % rows.length + rows.length) % rows.length;
+  return rows.slice(offset).concat(rows.slice(0, offset));
+}
+
 function writeSearches(rows, opts) {
   const format = opts.format || (opts.out && opts.out.endsWith(".json") ? "json" : "markdown");
   let body;
@@ -148,15 +160,18 @@ function writeSearches(rows, opts) {
 function generateWatchBatch(config, opts) {
   const allRows = generateSearches(config);
   const limit = Number(opts.limit || allRows.length);
-  const priorityRank = { high: 0, normal: 1, low: 2 };
-  const rows = allRows
-    .sort((a, b) => (priorityRank[a.priority] ?? 1) - (priorityRank[b.priority] ?? 1))
-    .slice(0, limit);
+  const sortedRows = sortedSearchRows(allRows);
+  const statePath = outputPath(opts.state || DEFAULT_STATE_PATH);
+  const state = opts.rotate ? readJsonIfExists(statePath, { seenHashes: [] }) : null;
+  const cursor = state ? Number(state.watchCursor || 0) : 0;
+  const sourceRows = opts.rotate ? rotateRows(sortedRows, cursor) : sortedRows;
+  const rows = sourceRows.slice(0, limit);
   const capturePath = "monitoring/facebook-capture-snippet.js";
   const mdOut = opts.out || "monitoring/facebook-watch.md";
   const htmlOut = opts.html || null;
   const openOut = opts.script || "monitoring/facebook-open-watch.sh";
   const now = new Date().toISOString();
+  const nextCursor = sortedRows.length ? (cursor + rows.length) % sortedRows.length : 0;
 
   const md = [
     "# Facebook Watch Batch",
@@ -214,14 +229,33 @@ ${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeH
     for (const row of rows) childProcess.spawnSync("open", [row.url], { stdio: "ignore" });
   }
 
+  if (opts.rotate) {
+    const nextState = {
+      ...state,
+      watchUpdatedAt: now,
+      watchCursor: nextCursor,
+      watchTotalSearches: sortedRows.length,
+      watchLimit: limit
+    };
+    fs.writeFileSync(statePath, JSON.stringify(nextState, null, 2) + "\n");
+  }
+
   const summary = {
     generatedAt: now,
     searches: rows.length,
+    totalSearches: sortedRows.length,
     groups: (config.facebook.groups || []).length,
     markdown: mdOut,
     html: htmlOut,
     openScript: openOut,
-    opened: Boolean(opts.open)
+    opened: Boolean(opts.open),
+    rotation: opts.rotate ? {
+      enabled: true,
+      state: path.relative(ROOT, statePath),
+      cursor,
+      nextCursor,
+      totalSearches: sortedRows.length
+    } : { enabled: false }
   };
   if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
   return summary;
@@ -435,7 +469,8 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
   const files = inboxFiles(inboxDir);
   const candidatesFile = opts.candidates || DEFAULT_CANDIDATES_PATH;
   const candidatesPath = outputPath(candidatesFile);
-  const statePath = outputPath("monitoring/facebook-monitor-state.json");
+  const statePath = outputPath(opts.state || DEFAULT_STATE_PATH);
+  const state = readJsonIfExists(statePath, { seenHashes: [] });
   const watchRows = generateSearches(config);
   const candidates = fs.existsSync(candidatesPath) ? readJson(candidatesPath) : [];
   return {
@@ -446,26 +481,33 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
     inboxFiles: files.length,
     candidates: candidates.length,
     candidateStatus: countStatuses(candidates),
-    seenHashes: fs.existsSync(statePath) ? (readJson(statePath).seenHashes || []).length : 0,
+    seenHashes: (state.seenHashes || []).length,
+    watchCursor: state.watchCursor || 0,
+    watchTotalSearches: state.watchTotalSearches || watchRows.length,
+    watchLimit: state.watchLimit || null,
+    watchUpdatedAt: state.watchUpdatedAt || null,
     cadenceHours: config.facebook.scanCadenceHours || 6
   };
 }
 
-function runStatus() {
-  console.log(JSON.stringify(monitorSnapshot(), null, 2));
+function runStatus(opts = {}) {
+  console.log(JSON.stringify(monitorSnapshot(loadConfig(), opts), null, 2));
 }
 
 function runNext(opts) {
   const config = loadConfig();
   const out = opts.out || "monitoring/facebook-next.md";
+  const rotate = !opts["no-rotate"];
   const watch = generateWatchBatch(config, {
     out: opts.watch || "monitoring/facebook-watch.md",
     html: opts.html || "monitoring/facebook-watch.html",
     script: opts.script || "monitoring/facebook-open-watch.sh",
     limit: opts.limit || 40,
+    state: opts.state || DEFAULT_STATE_PATH,
+    rotate,
     quiet: true
   });
-  const snapshot = monitorSnapshot(config);
+  const snapshot = monitorSnapshot(config, opts);
   const generatedAt = new Date().toISOString();
   const groupLines = config.facebook.groups.length
     ? config.facebook.groups.map(group => `- ${group.name} (${group.priority || "normal"}): ${group.url}`)
@@ -474,6 +516,7 @@ function runNext(opts) {
       "- Paste copied group links into the local group list: `pbpaste | node scripts/facebook-monitor.mjs groups - --priority high`"
     ];
   const commands = {
+    nextRun: "node scripts/facebook-monitor.mjs next --limit 40 --open",
     importGroups: "pbpaste | node scripts/facebook-monitor.mjs groups - --priority high",
     captureInbox: "pbpaste | node scripts/facebook-monitor.mjs inbox - --name <group-or-search-name>",
     scan: "node scripts/facebook-monitor.mjs scan --open",
@@ -492,7 +535,8 @@ function runNext(opts) {
     "## Coverage",
     "",
     `Configured private groups: ${snapshot.groups}`,
-    `Watch searches this run: ${watch.searches} of ${snapshot.totalWatchSearches}`,
+    `Watch searches this run: ${watch.searches} of ${watch.totalSearches}`,
+    `Rotation: ${watch.rotation.enabled ? `cursor ${watch.rotation.cursor} -> ${watch.rotation.nextCursor}` : "off"}`,
     "",
     ...groupLines,
     "",
@@ -513,6 +557,7 @@ function runNext(opts) {
     "## Next Commands",
     "",
     "```sh",
+    commands.nextRun,
     commands.importGroups,
     `open ${shellQuote(outputPath(watch.html || "monitoring/facebook-watch.html"))}`,
     commands.captureInbox,
@@ -532,6 +577,8 @@ function runNext(opts) {
     openScript: relativeOut(watch.openScript),
     groups: snapshot.groups,
     searches: watch.searches,
+    totalSearches: watch.totalSearches,
+    rotation: watch.rotation,
     inboxFiles: snapshot.inboxFiles,
     candidates: snapshot.candidates,
     candidateStatus: snapshot.candidateStatus,
@@ -939,6 +986,7 @@ function runScore(files, opts) {
 
   if (opts["update-state"] && statePath) {
     const next = {
+      ...state,
       updatedAt: new Date().toISOString(),
       seenHashes: [...new Set([...(state.seenHashes || []), ...posts.map(post => crypto.createHash("sha1").update(post.text).digest("hex"))])].sort()
     };
@@ -1022,7 +1070,7 @@ if (!cmd || cmd === "help") {
     process.exit(1);
   }
 } else if (cmd === "status") {
-  runStatus();
+  runStatus(opts);
 } else if (cmd === "next") {
   runNext(opts);
 } else if (cmd === "inbox") {
