@@ -208,6 +208,28 @@ function canonicalGroupUrl(url) {
   return match ? `https://www.facebook.com/groups/${match[1]}` : String(url || "").replace(/[?#].*$/, "").replace(/\/+$/, "");
 }
 
+function facebookLeadUrlRank(url) {
+  const value = String(url || "");
+  if (/\/marketplace\/item\//i.test(value)) return 0;
+  if (/\/groups\/[^/?#]+\/(?:posts|permalink)\//i.test(value)) return 1;
+  if (/\/(?:permalink|posts)\//i.test(value) || /\/permalink\.php\b/i.test(value)) return 2;
+  if (/\/share\/(?:p|r|v)\//i.test(value)) return 3;
+  if (/\/photo\.php\b/i.test(value)) return 4;
+  if (/\/marketplace\//i.test(value)) return 8;
+  if (/\/groups\//i.test(value)) return 10;
+  return 20;
+}
+
+function primaryFacebookLeadUrl(values, fallback = "") {
+  const rows = (Array.isArray(values) ? values : [values])
+    .concat(fallback ? [fallback] : [])
+    .map((url, i) => ({ url: String(url || "").trim(), i }))
+    .filter(row => /facebook\.com\//i.test(row.url))
+    .filter(row => !/\/groups\/[^/?#]+\/(?:search|members|about|media|files|photos)\b/i.test(row.url))
+    .sort((a, b) => facebookLeadUrlRank(a.url) - facebookLeadUrlRank(b.url) || a.i - b.i);
+  return rows[0]?.url || fallback || "";
+}
+
 function discoveryTerms(opts = {}) {
   if (!opts.terms) return DEFAULT_GROUP_DISCOVERY_TERMS;
   return String(opts.terms)
@@ -2317,12 +2339,13 @@ function normalizePost(item, file) {
   if (text.length < 60) return null;
   const links = Array.isArray(item.links) ? item.links : [];
   const images = Array.isArray(item.images) ? item.images : [];
+  const url = primaryFacebookLeadUrl([item.url, ...links], item.pageUrl);
   return {
     file,
     capturedAt: item.capturedAt || null,
     pageTitle: item.pageTitle || item.group || "",
     pageUrl: item.pageUrl || "",
-    url: item.url || links[0] || item.pageUrl || "",
+    url,
     links,
     images,
     sourceKind: item.sourceKind || "",

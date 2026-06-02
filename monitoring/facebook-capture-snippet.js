@@ -14,6 +14,23 @@
     const match = String(href || "").match(/facebook\.com\/groups\/([^/?#]+)/i);
     return match ? `https://www.facebook.com/groups/${match[1]}` : "";
   };
+  const leadUrlRank = href => {
+    const value = String(href || "");
+    if (/\/marketplace\/item\//i.test(value)) return 0;
+    if (/\/groups\/[^/?#]+\/(?:posts|permalink)\//i.test(value)) return 1;
+    if (/\/(?:permalink|posts)\//i.test(value) || /\/permalink\.php\b/i.test(value)) return 2;
+    if (/\/share\/(?:p|r|v)\//i.test(value)) return 3;
+    if (/\/photo\.php\b/i.test(value)) return 4;
+    if (/\/marketplace\//i.test(value)) return 8;
+    if (/\/groups\//i.test(value)) return 10;
+    return 20;
+  };
+  const primaryLeadUrl = (hrefs, fallback = location.href) => hrefs
+    .concat(fallback ? [fallback] : [])
+    .map((href, i) => ({ href: String(href || "").trim(), i }))
+    .filter(row => /facebook\.com\//i.test(row.href))
+    .filter(row => !/\/groups\/[^/?#]+\/(?:search|members|about|media|files|photos)\b/i.test(row.href))
+    .sort((a, b) => leadUrlRank(a.href) - leadUrlRank(b.href) || a.i - b.i)[0]?.href || fallback;
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   async function expandVisibleText() {
     const buttons = Array.from(document.querySelectorAll('[role="button"], button, span, a'))
@@ -87,11 +104,12 @@
       .filter(src => /scontent|fbcdn/i.test(src))
       .slice(0, 6);
     const key = text.slice(0, 240).replace(/\s+/g, " ");
+    const leadUrl = primaryLeadUrl(links);
     uniq.set(key, {
       capturedAt: new Date().toISOString(),
       pageTitle: document.title,
       pageUrl: location.href,
-      url: links[0] || location.href,
+      url: leadUrl,
       links,
       images,
       sourceKind: links.some(href => /\/marketplace\//i.test(href)) || /\/marketplace\//i.test(location.href) ? "marketplace" : "post",
