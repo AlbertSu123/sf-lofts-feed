@@ -389,24 +389,75 @@ function generateWatchBatch(config, opts) {
   if (htmlOut) {
     const captureRel = path.relative(path.dirname(outputPath(htmlOut)), outputPath(capturePath)).replace(/\\/g, "/");
     const captureHref = captureRel.startsWith("..") ? pathToFileURL(outputPath(capturePath)).href : captureRel;
+    const bookmarkletPath = "monitoring/facebook-capture-bookmarklet.html";
+    const bookmarkletRel = path.relative(path.dirname(outputPath(htmlOut)), outputPath(bookmarkletPath)).replace(/\\/g, "/");
+    const bookmarkletHref = bookmarkletRel.startsWith("..") ? pathToFileURL(outputPath(bookmarkletPath)).href : bookmarkletRel;
+    const reviewPath = "monitoring/facebook-review.html";
+    const reviewRel = path.relative(path.dirname(outputPath(htmlOut)), outputPath(reviewPath)).replace(/\\/g, "/");
+    const reviewHref = reviewRel.startsWith("..") ? pathToFileURL(outputPath(reviewPath)).href : reviewRel;
+    const doneKey = `sf-lofts-facebook-watch:${crypto.createHash("sha1").update(rows.map(row => row.url).join("\n")).digest("hex").slice(0, 12)}`;
     const html = `<!doctype html>
 <meta charset="utf-8">
 <title>Facebook Watch Batch</title>
 <style>
-body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.45;margin:24px;color:#111}
-a{color:#06c} table{border-collapse:collapse;width:100%;max-width:1100px}td,th{border:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}th{background:#f6f6f6}.high{background:#fff3f3}.low{color:#666}
-code,textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}textarea{width:100%;height:180px}
+body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.45;margin:24px;color:#111;background:#fafafa}
+a{color:#06c}.toolbar{position:sticky;top:0;z-index:3;background:#fffffff0;border:1px solid #ddd;border-radius:8px;padding:12px;margin:14px 0 16px;box-shadow:0 2px 10px #0001;backdrop-filter:blur(8px)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:8px 0}.step{background:#f6f7f8;border:1px solid #e1e1e1;border-radius:7px;padding:10px}.step b{display:block;margin-bottom:3px}
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}.progress{font-weight:700}.cmd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#fff;border:1px solid #ddd;border-radius:6px;padding:7px 9px}
+button{border:1px solid #bbb;background:#fff;border-radius:6px;padding:7px 10px;cursor:pointer}table{border-collapse:collapse;width:100%;max-width:1180px;background:#fff}td,th{border:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}th{background:#f6f6f6}.high{background:#fff3f3}.low{color:#666}.done{opacity:.45;background:#f1f5f1}.done a{text-decoration:line-through}
+code,textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}textarea{width:100%;height:180px}.check{width:44px;text-align:center}
 </style>
 <h1>Facebook Watch Batch</h1>
-<p>Generated ${escapeHtml(now)}. Run the capture snippet after each promising page loads.</p>
-<p><a href="${escapeHtml(captureHref)}">Open capture snippet file</a></p>
-<p>After capture files download, run <code>node scripts/facebook-monitor.mjs run --open-review</code> to import, score, and refresh the next batch.</p>
+<p>Generated ${escapeHtml(now)}. Work through these while logged into Facebook, then import the downloaded captures.</p>
+<section class="toolbar">
+  <div class="steps">
+    <div class="step"><b>1. Bookmarklet</b><a href="${escapeHtml(bookmarkletHref)}">Open installer</a> or <a href="${escapeHtml(captureHref)}">open snippet</a>.</div>
+    <div class="step"><b>2. Capture</b>Open a row, sort recent where possible, click <code>Capture FB Housing</code>, then check it off here.</div>
+    <div class="step"><b>3. Import</b><span class="cmd">node scripts/facebook-monitor.mjs run --open-review</span></div>
+    <div class="step"><b>4. Review</b><a href="${escapeHtml(reviewHref)}">Open review page</a> after imports finish.</div>
+  </div>
+  <div class="controls">
+    <span class="progress" id="progress">0/${rows.length} captured</span>
+    <button type="button" id="copyImport">Copy import command</button>
+    <button type="button" id="clearDone">Clear checkoffs</button>
+  </div>
+</section>
 <table>
-<thead><tr><th>Priority</th><th>Surface</th><th>Term</th><th>Open</th></tr></thead>
+<thead><tr><th class="check">Done</th><th>Priority</th><th>Surface</th><th>Term</th><th>Open</th></tr></thead>
 <tbody>
-${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeHtml(r.priority || "normal")}</td><td>${escapeHtml(r.label || r.surface)}</td><td>${escapeHtml(r.term)}</td><td><a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">open search</a></td></tr>`).join("\n")}
+${rows.map((r, i) => `<tr class="${escapeHtml(r.priority || "normal")}" data-url="${escapeHtml(r.url)}"><td class="check"><input type="checkbox" data-done="${i}"></td><td>${escapeHtml(r.priority || "normal")}</td><td>${escapeHtml(r.label || r.surface)}</td><td>${escapeHtml(r.term)}</td><td><a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">open search</a></td></tr>`).join("\n")}
 </tbody>
 </table>
+<script>
+const doneKey=${js(doneKey)};
+const importCommand="node scripts/facebook-monitor.mjs run --open-review";
+const checks=[...document.querySelectorAll('[data-done]')];
+const rows=[...document.querySelectorAll('tr[data-url]')];
+const progress=document.getElementById('progress');
+function readDone(){
+  try{return new Set(JSON.parse(localStorage.getItem(doneKey)||"[]"))}catch{return new Set()}
+}
+function writeDone(done){localStorage.setItem(doneKey,JSON.stringify([...done]));}
+function sync(){
+  const done=readDone();
+  rows.forEach((row,i)=>{
+    const checked=done.has(row.dataset.url);
+    row.classList.toggle('done',checked);
+    checks[i].checked=checked;
+  });
+  progress.textContent=done.size+"/"+rows.length+" captured";
+}
+checks.forEach((box,i)=>box.addEventListener('change',()=>{
+  const done=readDone();
+  const url=rows[i].dataset.url;
+  if(box.checked) done.add(url); else done.delete(url);
+  writeDone(done);
+  sync();
+}));
+document.getElementById('clearDone').addEventListener('click',()=>{localStorage.removeItem(doneKey);sync();});
+document.getElementById('copyImport').addEventListener('click',()=>navigator.clipboard.writeText(importCommand));
+sync();
+</script>
 `;
     fs.writeFileSync(outputPath(htmlOut), html);
   }

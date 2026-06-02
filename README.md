@@ -93,7 +93,7 @@ node scripts/facebook-monitor.mjs bookmarklet --out monitoring/facebook-capture-
 open monitoring/facebook-capture-bookmarklet.html
 ```
 
-4. Open `monitoring/facebook-watch.html`, then work through the links while logged into Facebook. Click the `Capture FB Housing` bookmarklet on each results page or group search page. It downloads a `fb-housing-capture-*.json` file and also copies the same JSON to the clipboard. You can also run it on Facebook Groups pages to discover visible group links for import.
+4. Open `monitoring/facebook-watch.html`, then work through the links while logged into Facebook. The watch page includes a capture checklist, bookmarklet/snippet links, persistent per-row checkoffs, and the import command. Click the `Capture FB Housing` bookmarklet on each results page or group search page. It downloads a `fb-housing-capture-*.json` file and also copies the same JSON to the clipboard. You can also run it on Facebook Groups pages to discover visible group links for import.
 5. Import new capture downloads into the inbox, and optionally import housing-like groups from those same captures:
 
 ```sh
