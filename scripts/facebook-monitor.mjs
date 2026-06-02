@@ -1249,6 +1249,71 @@ function yieldLabel(row) {
   return `${row.passVerifyCandidates || 0}/${row.listingPosts || 0}`;
 }
 
+function groupSweepScore(row) {
+  const statusScore = row.status === "never" ? 600
+    : row.status === "stale" ? 500
+      : row.status === "fresh" ? 50
+        : 0;
+  const priorityScore = row.priority === "high" ? 40
+    : row.priority === "normal" ? 20
+      : 0;
+  const accessScore = row.accessStatus === "joined" ? 30
+    : row.accessStatus === "pending" ? -20
+      : shouldWatchStatus(row.accessStatus) ? 0
+        : -200;
+  const qualityScore = row.quality === "good" ? 25
+    : row.quality === "ok" ? 10
+      : row.quality === "low" ? -40
+        : 0;
+  const passScore = Math.min(row.passVerifyCandidates || 0, 5) * 120;
+  const listingScore = Math.min(row.listingPosts || 0, 20) * 6;
+  const rejectPenalty = Math.min((row.rejectedCandidates || 0) + (row.duplicateCandidates || 0), 20) * 8;
+  const budgetPenalty = Math.min(row.overBudgetCandidates || 0, 10) * 20;
+  const freshnessNudge = row.ageHours === null ? 0
+    : row.status === "stale" ? Math.min(row.ageHours, 168)
+      : row.status === "fresh" ? Math.min(row.ageHours, 24)
+        : 0;
+  return Math.round(statusScore + priorityScore + accessScore + qualityScore + passScore + listingScore + freshnessNudge - rejectPenalty - budgetPenalty);
+}
+
+function groupSweepReason(row) {
+  const parts = [];
+  if (row.status === "never") parts.push("needs first capture");
+  else if (row.status === "stale") parts.push(`stale ${ageLabel(row)}`);
+  else parts.push(`fresh ${ageLabel(row)}`);
+  if (row.passVerifyCandidates) parts.push(`${row.passVerifyCandidates} pass/verify`);
+  if (row.listingPosts) parts.push(`${row.listingPosts} listing posts`);
+  if ((row.rejectedCandidates || 0) + (row.duplicateCandidates || 0)) {
+    parts.push(`${(row.rejectedCandidates || 0) + (row.duplicateCandidates || 0)} reject/dup`);
+  }
+  if (row.overBudgetCandidates) parts.push(`${row.overBudgetCandidates} over budget`);
+  if (row.priority === "high") parts.push("high priority");
+  if (row.quality) parts.push(`${row.quality} quality`);
+  if (row.accessStatus && row.accessStatus !== "unverified") parts.push(row.accessStatus);
+  return parts.join("; ");
+}
+
+function ageLabel(row) {
+  return row.ageHours === null ? "never" : `${row.ageHours}h`;
+}
+
+function lastLabel(row) {
+  return row.lastCapturedAt || "never";
+}
+
+function rankedGroupSweepRows(rows) {
+  return rows
+    .map(row => ({
+      ...row,
+      sweepScore: groupSweepScore(row)
+    }))
+    .sort((a, b) =>
+      b.sweepScore - a.sweepScore ||
+      (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1) ||
+      a.name.localeCompare(b.name)
+    );
+}
+
 function groupStatusCommand(row, status, opts = {}) {
   const parts = [
     "node",
@@ -1280,7 +1345,7 @@ function localHref(fromFile, toFile) {
 
 function generateGroupWatchBatch(config, opts = {}) {
   const coverage = groupCaptureCoverage(config, opts);
-  const watchedRows = coverage.groups.filter(row => row.watch !== false);
+  const watchedRows = rankedGroupSweepRows(coverage.groups.filter(row => row.watch !== false));
   const limit = Number(opts.limit || opts["group-limit"] || watchedRows.length);
   const rows = watchedRows.slice(0, limit);
   const mdOut = opts.out || opts["group-watch"] || DEFAULT_GROUP_WATCH_PATH;
@@ -1288,8 +1353,6 @@ function generateGroupWatchBatch(config, opts = {}) {
   const openOut = opts.script || opts["group-watch-script"] || DEFAULT_GROUP_OPEN_SCRIPT_PATH;
   const openLinks = Boolean(opts.openLinks || opts["open-links"]);
   const now = new Date().toISOString();
-  const ageLabel = row => row.ageHours === null ? "never" : `${row.ageHours}h`;
-  const lastLabel = row => row.lastCapturedAt || "never";
   const notesLabel = row => row.statusNotes || row.quality || "";
   const md = [
     "# Facebook Group Sweep",
@@ -1305,9 +1368,11 @@ function generateGroupWatchBatch(config, opts = {}) {
     "4. If a group is inaccessible, noisy, or pending, record it with `group-status` so future sweeps get sharper.",
     "5. Run `node scripts/facebook-monitor.mjs run --open-review` to import downloads, score leads, and refresh the next sweep.",
     "",
-    "| Freshness | Access | Priority | Yield | Group | Last captured | Age | Group | Core search | Notes |",
-    "| --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |",
-    ...rows.map(row => `| ${escapeMd(row.status)} | ${escapeMd(row.accessStatus)} | ${escapeMd(row.priority)} | ${escapeMd(yieldLabel(row))} | ${escapeMd(row.name)} | ${escapeMd(lastLabel(row))} | ${escapeMd(ageLabel(row))} | [group](${row.url}) | [search](${coverageSearchUrl(row, config)}) | ${escapeMd(notesLabel(row))} |`)
+    "Sweep order is evidence-ranked: stale productive groups first, never-captured groups next, and low-yield/noisy groups lower unless they are overdue.",
+    "",
+    "| Score | Why | Freshness | Access | Priority | Yield | Group | Last captured | Age | Group | Core search | Notes |",
+    "| ---: | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |",
+    ...rows.map(row => `| ${row.sweepScore} | ${escapeMd(groupSweepReason(row))} | ${escapeMd(row.status)} | ${escapeMd(row.accessStatus)} | ${escapeMd(row.priority)} | ${escapeMd(yieldLabel(row))} | ${escapeMd(row.name)} | ${escapeMd(lastLabel(row))} | ${escapeMd(ageLabel(row))} | [group](${row.url}) | [search](${coverageSearchUrl(row, config)}) | ${escapeMd(notesLabel(row))} |`)
   ].join("\n") + "\n";
   fs.writeFileSync(outputPath(mdOut), md);
 
@@ -1348,9 +1413,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   </div>
 </section>
 <table>
-<thead><tr><th class="check">Done</th><th>Freshness</th><th>Access</th><th>Priority</th><th>Yield</th><th>Group</th><th>Last captured</th><th>Age</th><th>Links</th><th>Notes</th><th>Curation</th></tr></thead>
+<thead><tr><th class="check">Done</th><th>Score</th><th>Why</th><th>Freshness</th><th>Access</th><th>Priority</th><th>Yield</th><th>Group</th><th>Last captured</th><th>Age</th><th>Links</th><th>Notes</th><th>Curation</th></tr></thead>
 <tbody>
-${rows.map((row, i) => `<tr class="${escapeHtml(row.status)}" data-url="${escapeHtml(row.url)}"><td class="check"><input type="checkbox" data-done="${i}"></td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.accessStatus)}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(yieldLabel(row))}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td><td>${escapeHtml(notesLabel(row))}</td><td class="actions">${groupStatusActions(row)}</td></tr>`).join("\n")}
+${rows.map((row, i) => `<tr class="${escapeHtml(row.status)}" data-url="${escapeHtml(row.url)}"><td class="check"><input type="checkbox" data-done="${i}"></td><td>${row.sweepScore}</td><td>${escapeHtml(groupSweepReason(row))}</td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.accessStatus)}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(yieldLabel(row))}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td><td>${escapeHtml(notesLabel(row))}</td><td class="actions">${groupStatusActions(row)}</td></tr>`).join("\n")}
 </tbody>
 </table>
 <script>
@@ -1887,7 +1952,8 @@ function runNext(opts) {
   const rotate = !opts["no-rotate"];
   const coverage = groupCaptureCoverage(config, opts);
   const staleRows = coverage.groups.filter(group => group.status !== "fresh" && group.watch !== false);
-  const focusRows = opts["no-focus-stale"] ? [] : staleRows;
+  const staleRankedRows = rankedGroupSweepRows(staleRows);
+  const focusRows = opts["no-focus-stale"] ? [] : staleRankedRows;
   const groupWatch = generateGroupWatchBatch(config, {
     ...opts,
     out: opts["group-watch"] || DEFAULT_GROUP_WATCH_PATH,
@@ -1951,8 +2017,8 @@ function runNext(opts) {
   const freshnessLines = !coverage.groups.length
     ? ["- No groups configured yet."]
     : staleRows.length
-      ? staleRows.slice(0, 12).map(group =>
-        `- ${group.status}: ${group.name} (${group.priority})${group.lastCapturedAt ? ` · last ${group.lastCapturedAt}` : ""}`
+      ? staleRankedRows.slice(0, 12).map(group =>
+        `- ${group.status}: ${group.name} (${group.priority}, score ${group.sweepScore})${group.lastCapturedAt ? ` · last ${group.lastCapturedAt}` : ""} · ${groupSweepReason(group)}`
       )
       : ["- All configured groups are fresh."];
   const yieldLines = coverage.groups

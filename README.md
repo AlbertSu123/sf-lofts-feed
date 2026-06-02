@@ -82,7 +82,7 @@ Run the full monitoring loop. This imports any new `fb-housing-capture-*.json` f
 node scripts/facebook-monitor.mjs run --limit 40 --open-group-watch --open-review
 ```
 
-`--open-group-watch` opens the generated one-row-per-group sweep page, not every Facebook group URL. Open rows from that checklist as you work through them. Use `--open-watch` for the deeper term-search checklist, or use the generated `monitoring/facebook-open-watch.sh` / `--open-links` when you intentionally want to launch the whole search batch at once.
+`--open-group-watch` opens the generated one-row-per-group sweep page, not every Facebook group URL. Open rows from that checklist as you work through them. The sweep is evidence-ranked: stale groups with prior pass/verify yield rise to the top, never-captured groups still get coverage, and low-yield/noisy groups sink unless they are overdue. Use `--open-watch` for the deeper term-search checklist, or use the generated `monitoring/facebook-open-watch.sh` / `--open-links` when you intentionally want to launch the whole search batch at once.
 
 `run` dedupes downloaded captures by hash in `monitoring/facebook-monitor-state.json`. It does not mark scored posts as reviewed; use `scan --update-state` after you have looked at the review page. The generated watch batch advances local rotation cursors so large group lists are covered across multiple runs instead of showing the same first links every time. It also prioritizes stale or never-captured groups first and round-robins those groups so later groups do not get starved by a larger search-term list.
 
