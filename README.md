@@ -60,6 +60,16 @@ node scripts/facebook-monitor.mjs coverage --stale-hours 24
 
 The full loop also refreshes `monitoring/facebook-coverage.html` and `monitoring/facebook-coverage.md`, which show every configured group, freshness status, last capture time, capture count, and one-click group/search links.
 
+After opening a group, record access/quality locally so the watch queue gets sharper over time:
+
+```sh
+node scripts/facebook-monitor.mjs group-status --list
+node scripts/facebook-monitor.mjs group-status sfhousing --status joined --quality good --notes "good SF-wide feed"
+node scripts/facebook-monitor.mjs group-status "Bay Area Rooms and Apartments" --status noisy --watch false --notes "too many room-only posts"
+```
+
+Group status is stored in ignored `monitoring/facebook-group-status.local.json`. Statuses such as `inaccessible`, `noisy`, or `skip` default to `watch:false`, which removes that group from generated watch searches while leaving it visible in coverage.
+
 You can also run the capture bookmarklet on Facebook Groups pages such as `facebook.com/groups/feed/` or your joined-groups list, then import only housing-like groups:
 
 ```sh

@@ -18,5 +18,6 @@ monitoring/facebook-open-watch*.sh
 monitoring/facebook-capture-bookmarklet.html
 monitoring/facebook-review*.html
 monitoring/facebook-groups.local.json
+monitoring/facebook-group-status.local.json
 monitoring/facebook-monitor-state.json
 monitoring/logs/

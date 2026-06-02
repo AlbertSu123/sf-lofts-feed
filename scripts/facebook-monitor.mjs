@@ -14,7 +14,9 @@ const DEFAULT_COVERAGE_PATH = "monitoring/facebook-coverage.md";
 const DEFAULT_COVERAGE_HTML_PATH = "monitoring/facebook-coverage.html";
 const DEFAULT_STATE_PATH = "monitoring/facebook-monitor-state.json";
 const DEFAULT_GROUP_SEEDS_PATH = "monitoring/facebook-group-seeds.json";
+const DEFAULT_GROUP_STATUS_PATH = "monitoring/facebook-group-status.local.json";
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
+const SKIPPED_GROUP_STATUSES = new Set(["skip", "skipped", "inaccessible", "dead", "noisy"]);
 const GROUP_HOUSING_PATTERN = /housing|apartment|apartments|apt\b|room|roommate|roommates|sublet|sublease|lease|rent|rental|loft|live.?work/i;
 const DEFAULT_GROUP_DISCOVERY_TERMS = [
   "San Francisco housing",
@@ -52,12 +54,15 @@ function loadConfig(opts = {}) {
     seen.add(group.url);
     return true;
   });
+  const groupsWithStatus = applyGroupStatuses(groupList, config, opts);
   return {
     ...config,
     facebook: {
       ...config.facebook,
-      groupUrls: groupList.map(group => group.url),
-      groups: groupList
+      groupUrls: groupsWithStatus.map(group => group.url),
+      groups: groupsWithStatus,
+      includeSkippedGroups: Boolean(opts["include-skipped-groups"]),
+      groupStatusFile: opts["group-status"] || opts["group-status-file"] || config.facebook.groupStatusFile || DEFAULT_GROUP_STATUS_PATH
     }
   };
 }
@@ -73,6 +78,67 @@ function normalizeGroups(input) {
       priority: entry.priority || "normal",
       notes: entry.notes || ""
     }));
+}
+
+function groupStatusFile(config = readJson(CONFIG_PATH), opts = {}) {
+  return outputPath(opts["group-status"] || opts["group-status-file"] || config.facebook?.groupStatusFile || DEFAULT_GROUP_STATUS_PATH);
+}
+
+function shouldWatchStatus(status) {
+  return !SKIPPED_GROUP_STATUSES.has(String(status || "").toLowerCase());
+}
+
+function parseWatchValue(value, fallback = true) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  return !/^(false|0|no|off|skip)$/i.test(String(value));
+}
+
+function normalizeGroupStatusRows(input) {
+  const rows = Array.isArray(input)
+    ? input
+    : Array.isArray(input?.groups) ? input.groups
+      : Array.isArray(input?.statuses) ? input.statuses
+        : [];
+  return rows
+    .filter(row => row && (row.url || row.groupUrl))
+    .map(row => {
+      const status = String(row.status || row.accessStatus || "unverified").toLowerCase();
+      return {
+        name: row.name || "",
+        url: canonicalGroupUrl(row.url || row.groupUrl),
+        status,
+        watch: parseWatchValue(row.watch, shouldWatchStatus(status)),
+        priority: row.priority || null,
+        quality: row.quality || "",
+        notes: row.notes || "",
+        checkedAt: row.checkedAt || row.updatedAt || ""
+      };
+    })
+    .filter(row => row.url);
+}
+
+function readGroupStatusMap(config, opts = {}) {
+  const file = groupStatusFile(config, opts);
+  const rows = normalizeGroupStatusRows(readJsonIfExists(file, { groups: [] }));
+  return new Map(rows.map(row => [row.url, row]));
+}
+
+function applyGroupStatuses(groups, config, opts = {}) {
+  const statusMap = readGroupStatusMap(config, opts);
+  return groups.map(group => {
+    const row = statusMap.get(group.url);
+    const accessStatus = row?.status || "unverified";
+    return {
+      ...group,
+      priority: row?.priority || group.priority || "normal",
+      accessStatus,
+      watch: row ? row.watch : true,
+      quality: row?.quality || "",
+      statusNotes: row?.notes || "",
+      accessCheckedAt: row?.checkedAt || ""
+    };
+  });
 }
 
 function parseArgs(argv) {
@@ -101,6 +167,7 @@ function usage() {
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
   node scripts/facebook-monitor.mjs seed-groups [--seeds monitoring/facebook-group-seeds.json] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
+  node scripts/facebook-monitor.mjs group-status [group-url-or-name] [--list] [--status joined|pending|inaccessible|noisy|skip|unverified] [--watch true|false] [--quality good|ok|low] [--priority high|normal|low] [--notes "..."] [--group-status monitoring/facebook-group-status.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs doctor [--downloads-dir ~/Downloads] [--state monitoring/facebook-monitor-state.json] [--candidates monitoring/facebook-candidates.json] [--inbox monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24] [--out monitoring/facebook-coverage.md] [--html monitoring/facebook-coverage.html]
@@ -261,6 +328,7 @@ function generateSearches(config) {
     rows.push({ surface: "posts", label: "Facebook posts", term, url: postSearchUrl(term), priority: "normal" });
     rows.push({ surface: "marketplace", label: "Marketplace", term, url: marketplaceSearchUrl(term, city), priority: "normal" });
     for (const group of config.facebook.groups || []) {
+      if (group.watch === false && !config.facebook.includeSkippedGroups) continue;
       rows.push({
         surface: "group",
         label: group.name,
@@ -698,6 +766,94 @@ function runGroups(args, opts) {
   console.log(JSON.stringify(result, null, 2));
 }
 
+function findConfiguredGroup(config, selector) {
+  const query = String(selector || "").trim();
+  if (!query) return null;
+  const canonical = /facebook\.com\/groups\//i.test(query) ? canonicalGroupUrl(query) : "";
+  const lower = query.toLowerCase();
+  return (config.facebook.groups || []).find(group =>
+    (canonical && group.url === canonical) ||
+    group.url.toLowerCase().includes(lower) ||
+    group.name.toLowerCase().includes(lower)
+  ) || null;
+}
+
+function readGroupStatusFile(config, opts = {}) {
+  const file = groupStatusFile(config, opts);
+  const raw = readJsonIfExists(file, { groups: [] });
+  return {
+    file,
+    groups: normalizeGroupStatusRows(raw)
+  };
+}
+
+function writeGroupStatusFile(file, groups) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ groups }, null, 2) + "\n");
+}
+
+function runGroupStatus(args, opts = {}) {
+  const baseConfig = readJson(CONFIG_PATH);
+  const config = loadConfig({ ...opts, "include-skipped-groups": true });
+  const { file, groups } = readGroupStatusFile(baseConfig, opts);
+  const groupByUrl = new Map(groups.map(group => [group.url, group]));
+
+  if (opts.list || !args.length) {
+    const rows = (config.facebook.groups || []).map(group => ({
+      name: group.name,
+      url: group.url,
+      priority: group.priority,
+      status: group.accessStatus || "unverified",
+      watch: group.watch !== false,
+      quality: group.quality || "",
+      notes: group.statusNotes || "",
+      checkedAt: group.accessCheckedAt || ""
+    }));
+    console.log(JSON.stringify({
+      file: path.relative(ROOT, file),
+      groups: rows.length,
+      watched: rows.filter(row => row.watch).length,
+      skipped: rows.filter(row => !row.watch).length,
+      rows
+    }, null, 2));
+    return;
+  }
+
+  const group = findConfiguredGroup(config, args.join(" "));
+  if (!group) {
+    console.error("No configured group matched that URL/name/slug.");
+    process.exit(1);
+  }
+
+  const status = opts.status ? String(opts.status).toLowerCase() : group.accessStatus || "unverified";
+  const existing = groupByUrl.get(group.url) || {};
+  const watch = opts.watch !== undefined
+    ? parseWatchValue(opts.watch, true)
+    : existing.watch !== undefined ? existing.watch : shouldWatchStatus(status);
+  const row = {
+    name: group.name,
+    url: group.url,
+    status,
+    watch,
+    priority: opts.priority || existing.priority || group.priority || "normal",
+    quality: opts.quality || existing.quality || "",
+    notes: opts.notes || existing.notes || "",
+    checkedAt: new Date().toISOString()
+  };
+  groupByUrl.set(group.url, row);
+  const sorted = [...groupByUrl.values()].sort((a, b) => a.name.localeCompare(b.name));
+  writeGroupStatusFile(file, sorted);
+  const nextConfig = loadConfig({ ...opts, "include-skipped-groups": true });
+  const allGroups = nextConfig.facebook.groups || [];
+  console.log(JSON.stringify({
+    file: path.relative(ROOT, file),
+    updated: row,
+    groups: allGroups.length,
+    watched: allGroups.filter(item => item.watch !== false).length,
+    skipped: allGroups.filter(item => item.watch === false).length
+  }, null, 2));
+}
+
 function runSeedGroups(opts = {}) {
   const config = readJson(CONFIG_PATH);
   const seedFile = opts.seeds || opts.seed || DEFAULT_GROUP_SEEDS_PATH;
@@ -909,6 +1065,11 @@ function groupCaptureCoverage(config = loadConfig(), opts = {}) {
     name: group.name,
     url: group.url,
     priority: group.priority || "normal",
+    accessStatus: group.accessStatus || "unverified",
+    watch: group.watch !== false,
+    quality: group.quality || "",
+    statusNotes: group.statusNotes || "",
+    accessCheckedAt: group.accessCheckedAt || "",
     captureCount: 0,
     lastCapturedAt: null,
     lastSourceFile: null
@@ -949,6 +1110,8 @@ function groupCaptureCoverage(config = loadConfig(), opts = {}) {
     freshGroups: rows.filter(row => row.status === "fresh").length,
     staleGroups: rows.filter(row => row.status === "stale").length,
     neverCapturedGroups: rows.filter(row => row.status === "never").length,
+    watchedGroups: rows.filter(row => row.watch).length,
+    skippedGroups: rows.filter(row => !row.watch).length,
     groups: rows
   };
 }
@@ -965,6 +1128,7 @@ function coverageFiles(config, coverage, opts = {}) {
   const ageLabel = row => row.ageHours === null ? "never" : `${row.ageHours}h`;
   const lastLabel = row => row.lastCapturedAt || "never";
   const sourceLabel = row => row.lastSourceFile || "none";
+  const notesLabel = row => row.statusNotes || row.quality || "";
   const md = [
     "# Facebook Group Capture Coverage",
     "",
@@ -974,17 +1138,19 @@ function coverageFiles(config, coverage, opts = {}) {
     "## Snapshot",
     "",
     `- Configured groups: ${coverage.totalGroups}`,
+    `- Watched groups: ${coverage.watchedGroups}`,
+    `- Skipped groups: ${coverage.skippedGroups}`,
     `- Fresh groups: ${coverage.freshGroups}`,
     `- Stale groups: ${coverage.staleGroups}`,
     `- Never captured groups: ${coverage.neverCapturedGroups}`,
     "",
     "## Groups",
     "",
-    "| Status | Priority | Group | Captures | Last captured | Age | Source | Links |",
-    "| --- | --- | --- | ---: | --- | --- | --- | --- |",
+    "| Freshness | Access | Watch | Priority | Group | Captures | Last captured | Age | Source | Notes | Links |",
+    "| --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- |",
     ...coverage.groups.map(row => {
       const links = `[group](${row.url}) · [search](${coverageSearchUrl(row, config)})`;
-      return `| ${escapeMd(row.status)} | ${escapeMd(row.priority)} | ${escapeMd(row.name)} | ${row.captureCount} | ${escapeMd(lastLabel(row))} | ${escapeMd(ageLabel(row))} | ${escapeMd(sourceLabel(row))} | ${links} |`;
+      return `| ${escapeMd(row.status)} | ${escapeMd(row.accessStatus)} | ${row.watch ? "yes" : "no"} | ${escapeMd(row.priority)} | ${escapeMd(row.name)} | ${row.captureCount} | ${escapeMd(lastLabel(row))} | ${escapeMd(ageLabel(row))} | ${escapeMd(sourceLabel(row))} | ${escapeMd(notesLabel(row))} | ${links} |`;
     })
   ].join("\n") + "\n";
   fs.writeFileSync(outputPath(mdOut), md);
@@ -1002,14 +1168,16 @@ table{border-collapse:collapse;width:100%;max-width:1220px;background:#fff}td,th
 <p>Generated ${escapeHtml(now)}. Stale threshold: ${escapeHtml(coverage.staleHours)} hours.</p>
 <section class="summary">
   <span class="pill">${coverage.totalGroups} configured</span>
+  <span class="pill">${coverage.watchedGroups} watched</span>
+  <span class="pill">${coverage.skippedGroups} skipped</span>
   <span class="pill">${coverage.freshGroups} fresh</span>
   <span class="pill">${coverage.staleGroups} stale</span>
   <span class="pill">${coverage.neverCapturedGroups} never captured</span>
 </section>
 <table>
-<thead><tr><th>Status</th><th>Priority</th><th>Group</th><th>Captures</th><th>Last captured</th><th>Age</th><th>Source</th><th>Links</th></tr></thead>
+<thead><tr><th>Freshness</th><th>Access</th><th>Watch</th><th>Priority</th><th>Group</th><th>Captures</th><th>Last captured</th><th>Age</th><th>Source</th><th>Notes</th><th>Links</th></tr></thead>
 <tbody>
-${coverage.groups.map(row => `<tr class="${escapeHtml(row.status)}"><td>${escapeHtml(row.status)}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(row.name)}</td><td>${row.captureCount}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td>${escapeHtml(sourceLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td></tr>`).join("\n")}
+${coverage.groups.map(row => `<tr class="${escapeHtml(row.status)}"><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.accessStatus)}</td><td>${row.watch ? "yes" : "no"}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(row.name)}</td><td>${row.captureCount}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td>${escapeHtml(sourceLabel(row))}</td><td>${escapeHtml(notesLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td></tr>`).join("\n")}
 </tbody>
 </table>
 `;
@@ -1072,6 +1240,8 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
   }
   return {
     groups: config.facebook.groups.length,
+    watchedGroups: config.facebook.groups.filter(group => group.watch !== false).length,
+    skippedGroups: config.facebook.groups.filter(group => group.watch === false).length,
     groupNames: config.facebook.groups.map(group => group.name),
     baselineSearches: (config.facebook.searchTerms || []).length * 2,
     totalWatchSearches: watchRows.length,
@@ -1346,7 +1516,7 @@ function runNext(opts) {
   const digestFile = opts.digest || DEFAULT_DIGEST_PATH;
   const rotate = !opts["no-rotate"];
   const coverage = groupCaptureCoverage(config, opts);
-  const staleRows = coverage.groups.filter(group => group.status !== "fresh");
+  const staleRows = coverage.groups.filter(group => group.status !== "fresh" && group.watch !== false);
   const focusRows = opts["no-focus-stale"] ? [] : staleRows;
   const watch = generateWatchBatch(config, {
     out: opts.watch || "monitoring/facebook-watch.md",
@@ -1410,6 +1580,8 @@ function runNext(opts) {
     "## Coverage",
     "",
     `Configured private groups: ${snapshot.groups}`,
+    `Watched groups: ${snapshot.watchedGroups}`,
+    `Skipped groups: ${snapshot.skippedGroups}`,
     `Watch searches this run: ${watch.searches} of ${watch.totalSearches}`,
     `Rotation: ${watch.rotation.enabled ? `cursor ${watch.rotation.cursor} -> ${watch.rotation.nextCursor}` : "off"}`,
     `Focused term rotation: ${watch.rotation.enabled ? `cursor ${watch.rotation.focusCursor} -> ${watch.rotation.nextFocusCursor}` : "off"}`,
@@ -1472,6 +1644,8 @@ function runNext(opts) {
     openScript: relativeOut(watch.openScript),
     digest: relativeOut(digestFile),
     groups: snapshot.groups,
+    watchedGroups: snapshot.watchedGroups,
+    skippedGroups: snapshot.skippedGroups,
     searches: watch.searches,
     totalSearches: watch.totalSearches,
     rotation: watch.rotation,
@@ -2299,6 +2473,13 @@ if (!cmd || cmd === "help") {
 } else if (cmd === "groups") {
   try {
     runGroups(args, opts);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+} else if (cmd === "group-status") {
+  try {
+    runGroupStatus(args, opts);
   } catch (err) {
     console.error(err.message || String(err));
     process.exit(1);
