@@ -2,9 +2,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import childProcess from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const CONFIG_PATH = path.join(ROOT, "monitoring/facebook-monitor.config.json");
+const DEFAULT_CANDIDATES_PATH = "monitoring/facebook-candidates.json";
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -18,18 +21,36 @@ function loadConfig() {
   const config = readJson(CONFIG_PATH);
   const localGroupsPath = path.join(ROOT, config.facebook.localGroupsFile || "monitoring/facebook-groups.local.json");
   const local = readJsonIfExists(localGroupsPath, {});
-  const groupUrls = [
-    ...(config.facebook.groupUrls || []),
-    ...(local.groupUrls || []),
-    ...(local.groups || []).map(g => g.url).filter(Boolean)
-  ];
+  const groups = normalizeGroups(config.facebook.groupUrls)
+    .concat(normalizeGroups(local.groupUrls))
+    .concat(normalizeGroups(local.groups));
+  const seen = new Set();
+  const groupList = groups.filter(group => {
+    if (!group.url || seen.has(group.url)) return false;
+    seen.add(group.url);
+    return true;
+  });
   return {
     ...config,
     facebook: {
       ...config.facebook,
-      groupUrls: [...new Set(groupUrls)]
+      groupUrls: groupList.map(group => group.url),
+      groups: groupList
     }
   };
+}
+
+function normalizeGroups(input) {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((entry, i) => typeof entry === "string" ? { name: `Group ${i + 1}`, url: entry } : entry)
+    .filter(entry => entry && entry.url)
+    .map((entry, i) => ({
+      name: entry.name || `Group ${i + 1}`,
+      url: entry.url,
+      priority: entry.priority || "normal",
+      notes: entry.notes || ""
+    }));
 }
 
 function parseArgs(argv) {
@@ -52,7 +73,9 @@ function parseArgs(argv) {
 function usage() {
   console.log(`Usage:
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
+  node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--existing index.html]
+  node scripts/facebook-monitor.mjs publish <candidates.json> --select <handle-or-hash,...> [--apply] [--index index.html]
 
 Raw captures and generated candidates are ignored by git. Review and verify before publishing any private-group lead.`);
 }
@@ -75,10 +98,17 @@ function generateSearches(config) {
   const city = config.facebook.cityMarketplace || "sanfrancisco";
   const rows = [];
   for (const term of terms) {
-    rows.push({ surface: "posts", term, url: postSearchUrl(term) });
-    rows.push({ surface: "marketplace", term, url: marketplaceSearchUrl(term, city) });
-    for (const groupUrl of config.facebook.groupUrls || []) {
-      rows.push({ surface: "group", term, groupUrl, url: groupSearchUrl(groupUrl, term) });
+    rows.push({ surface: "posts", label: "Facebook posts", term, url: postSearchUrl(term), priority: "normal" });
+    rows.push({ surface: "marketplace", label: "Marketplace", term, url: marketplaceSearchUrl(term, city), priority: "normal" });
+    for (const group of config.facebook.groups || []) {
+      rows.push({
+        surface: "group",
+        label: group.name,
+        term,
+        groupUrl: group.url,
+        url: groupSearchUrl(group.url, term),
+        priority: group.priority || "normal"
+      });
     }
   }
   return rows;
@@ -97,11 +127,105 @@ function writeSearches(rows, opts) {
       "",
       "| Surface | Term | URL |",
       "| --- | --- | --- |",
-      ...rows.map(r => `| ${r.surface} | ${escapeMd(r.term)} | ${r.url} |`)
+      ...rows.map(r => `| ${r.surface}${r.label ? ` · ${escapeMd(r.label)}` : ""} | ${escapeMd(r.term)} | ${r.url} |`)
     ].join("\n") + "\n";
   }
-  if (opts.out) fs.writeFileSync(path.join(ROOT, opts.out), body);
+  if (opts.out) fs.writeFileSync(outputPath(opts.out), body);
   else process.stdout.write(body);
+}
+
+function generateWatchBatch(config, opts) {
+  const allRows = generateSearches(config);
+  const limit = Number(opts.limit || allRows.length);
+  const priorityRank = { high: 0, normal: 1, low: 2 };
+  const rows = allRows
+    .sort((a, b) => (priorityRank[a.priority] ?? 1) - (priorityRank[b.priority] ?? 1))
+    .slice(0, limit);
+  const capturePath = "monitoring/facebook-capture-snippet.js";
+  const mdOut = opts.out || "monitoring/facebook-watch.md";
+  const htmlOut = opts.html || null;
+  const openOut = opts.script || "monitoring/facebook-open-watch.sh";
+  const now = new Date().toISOString();
+
+  const md = [
+    "# Facebook Watch Batch",
+    "",
+    `Generated: ${now}`,
+    `Scan cadence target: every ${config.facebook.scanCadenceHours || 6} hours`,
+    "",
+    "Workflow:",
+    "",
+    "1. Open each link while logged into Facebook.",
+    "2. Sort or filter by recent posts where Facebook exposes that control.",
+    `3. Run \`${capturePath}\` on the results page.`,
+    "4. Save copied JSON under `monitoring/facebook-inbox/`.",
+    "5. Run the score command from the README.",
+    "",
+    "| Priority | Surface | Term | URL |",
+    "| --- | --- | --- | --- |",
+    ...rows.map(r => `| ${r.priority || "normal"} | ${escapeMd(r.label || r.surface)} | ${escapeMd(r.term)} | ${r.url} |`)
+  ].join("\n") + "\n";
+  fs.writeFileSync(outputPath(mdOut), md);
+
+  if (htmlOut) {
+    const captureRel = path.relative(path.dirname(outputPath(htmlOut)), outputPath(capturePath)).replace(/\\/g, "/");
+    const captureHref = captureRel.startsWith("..") ? pathToFileURL(outputPath(capturePath)).href : captureRel;
+    const html = `<!doctype html>
+<meta charset="utf-8">
+<title>Facebook Watch Batch</title>
+<style>
+body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.45;margin:24px;color:#111}
+a{color:#06c} table{border-collapse:collapse;width:100%;max-width:1100px}td,th{border:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}th{background:#f6f6f6}.high{background:#fff3f3}.low{color:#666}
+code,textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}textarea{width:100%;height:180px}
+</style>
+<h1>Facebook Watch Batch</h1>
+<p>Generated ${escapeHtml(now)}. Run the capture snippet after each promising page loads.</p>
+<p><a href="${escapeHtml(captureHref)}">Open capture snippet file</a></p>
+<table>
+<thead><tr><th>Priority</th><th>Surface</th><th>Term</th><th>Open</th></tr></thead>
+<tbody>
+${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeHtml(r.priority || "normal")}</td><td>${escapeHtml(r.label || r.surface)}</td><td>${escapeHtml(r.term)}</td><td><a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">open search</a></td></tr>`).join("\n")}
+</tbody>
+</table>
+`;
+    fs.writeFileSync(outputPath(htmlOut), html);
+  }
+
+  const sh = [
+    "#!/bin/sh",
+    "set -eu",
+    ...rows.map(r => `open ${shellQuote(r.url)}`)
+  ].join("\n") + "\n";
+  fs.writeFileSync(outputPath(openOut), sh, { mode: 0o755 });
+  fs.chmodSync(outputPath(openOut), 0o755);
+
+  if (opts.open) {
+    for (const row of rows) childProcess.spawnSync("open", [row.url], { stdio: "ignore" });
+  }
+
+  console.log(JSON.stringify({
+    generatedAt: now,
+    searches: rows.length,
+    groups: (config.facebook.groups || []).length,
+    markdown: mdOut,
+    html: htmlOut,
+    openScript: openOut,
+    opened: Boolean(opts.open)
+  }, null, 2));
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, ch => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[ch]));
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
 function escapeMd(value) {
@@ -413,6 +537,63 @@ function runScore(files, opts) {
   }, null, 2));
 }
 
+function selectCandidates(candidates, select) {
+  const selectors = String(select || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (!selectors.length) return [];
+  return candidates.filter(c => selectors.some(s =>
+    c.handle === s ||
+    c.textHash === s ||
+    c.textHash.startsWith(s) ||
+    c.handle.includes(s)
+  ));
+}
+
+function insertSnippetsIntoIndex(indexText, snippets) {
+  const marker = "\n{\n  rank:\"#2 of 100";
+  const at = indexText.indexOf(marker);
+  if (at === -1) {
+    throw new Error("Could not find the insertion point before the non-Facebook apartment cards.");
+  }
+  return `${indexText.slice(0, at)}\n${snippets.join("\n")}${indexText.slice(at)}`;
+}
+
+function runPublish(file, opts) {
+  if (!opts.select) {
+    console.error("publish requires --select <handle-or-hash,...>");
+    process.exit(1);
+  }
+  const candidates = readJson(path.resolve(process.cwd(), file || DEFAULT_CANDIDATES_PATH));
+  const selected = selectCandidates(candidates, opts.select)
+    .filter(c => c.status === "pass" || c.status === "verify");
+  if (!selected.length) {
+    console.error("No pass/verify candidates matched the selector.");
+    process.exit(1);
+  }
+  const snippets = selected.map(generateSnippet);
+  const indexFile = outputPath(opts.index || "index.html");
+  const indexText = fs.readFileSync(indexFile, "utf8");
+  const existing = loadExisting(opts.index || "index.html");
+  const dupes = selected.filter(c => existing.handles.has(c.handle) || (c.url && existing.urls.has(c.url)));
+  if (dupes.length) {
+    console.error(`Refusing to publish duplicates: ${dupes.map(c => c.handle).join(", ")}`);
+    process.exit(1);
+  }
+
+  if (opts.apply) {
+    fs.writeFileSync(indexFile, insertSnippetsIntoIndex(indexText, snippets));
+  }
+
+  console.log(JSON.stringify({
+    selected: selected.map(c => ({ handle: c.handle, status: c.status, score: c.score, price: priceLabel(c.price), ppb: ppbLabel(c.pricePerBedroom) })),
+    applied: Boolean(opts.apply),
+    index: opts.index || "index.html",
+    snippets: snippets.join("\n")
+  }, null, 2));
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 const { args, opts } = parseArgs(rest);
 
@@ -420,12 +601,16 @@ if (!cmd || cmd === "help") {
   usage();
 } else if (cmd === "searches") {
   writeSearches(generateSearches(loadConfig()), opts);
+} else if (cmd === "watch") {
+  generateWatchBatch(loadConfig(), opts);
 } else if (cmd === "score") {
   if (!args.length) {
     usage();
     process.exit(1);
   }
   runScore(args.map(file => path.resolve(process.cwd(), file)), opts);
+} else if (cmd === "publish") {
+  runPublish(args[0] || DEFAULT_CANDIDATES_PATH, opts);
 } else {
   usage();
   process.exit(1);

@@ -2,7 +2,9 @@
   "groups": [
     {
       "name": "Example SF housing group",
-      "url": "https://www.facebook.com/groups/example-group-id-or-slug"
+      "url": "https://www.facebook.com/groups/example-group-id-or-slug",
+      "priority": "high",
+      "notes": "Use high for groups with frequent lease-takeover or loft posts."
     }
   ]
 }
