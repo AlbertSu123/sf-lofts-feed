@@ -165,3 +165,9 @@ node scripts/facebook-monitor.mjs searches --out monitoring/facebook-searches.md
 ```
 
 The monitor enforces the current search rule: known-priced listings over `$2,500` per bedroom are rejected.
+
+Before pushing feed changes, audit the rendered app data to confirm no known-priced card over that limit is visible:
+
+```sh
+node scripts/audit-feed.mjs
+```
