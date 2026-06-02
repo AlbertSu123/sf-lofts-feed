@@ -6,6 +6,9 @@ monitoring/facebook-candidates*.md
 monitoring/facebook-searches*.json
 monitoring/facebook-searches*.md
 monitoring/facebook-next*.md
+monitoring/facebook-discovery*.html
+monitoring/facebook-discovery*.md
+monitoring/facebook-open-discovery*.sh
 monitoring/facebook-watch*.html
 monitoring/facebook-watch*.md
 monitoring/facebook-open-watch*.sh

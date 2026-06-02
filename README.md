@@ -6,7 +6,19 @@ Static GitHub Pages feed for SF apartment/loft leads.
 
 Facebook private groups do not expose a clean public feed, so the efficient path is a human-in-the-browser monitor:
 
-1. Add private group URLs to `monitoring/facebook-groups.local.json` using the example in `monitoring/facebook-monitor.config.json`.
+1. Discover or add private group URLs to `monitoring/facebook-groups.local.json` using the example in `monitoring/facebook-monitor.config.json`.
+
+Generate a group-discovery page when `status.setupGaps` says no groups are configured:
+
+```sh
+node scripts/facebook-monitor.mjs discover --open
+```
+
+Open the discovery links while logged into Facebook, click the `Capture FB Housing` bookmarklet on joined-groups and group-search pages, then import the downloaded discovery captures with the normal loop:
+
+```sh
+node scripts/facebook-monitor.mjs run --open-watch --open-review
+```
 
 You can paste group URLs instead of editing JSON:
 
@@ -15,7 +27,7 @@ pbpaste | node scripts/facebook-monitor.mjs groups - --priority high
 node scripts/facebook-monitor.mjs status
 ```
 
-`status` includes `setupGaps`; if it reports no groups, no captures, or no candidates, the monitor still needs a logged-in Facebook capture before it can source real leads.
+`status` includes `setupGaps`; if it reports no groups, no listing captures, or no candidates, the monitor still needs a logged-in Facebook capture before it can source real leads.
 
 Check which configured groups have not produced a recent capture:
 

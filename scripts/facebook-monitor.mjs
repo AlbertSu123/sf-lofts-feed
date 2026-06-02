@@ -11,6 +11,20 @@ const DEFAULT_CANDIDATES_PATH = "monitoring/facebook-candidates.json";
 const DEFAULT_STATE_PATH = "monitoring/facebook-monitor-state.json";
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 const GROUP_HOUSING_PATTERN = /housing|apartment|apartments|apt\b|room|roommate|roommates|sublet|sublease|lease|rent|rental|loft|live.?work/i;
+const DEFAULT_GROUP_DISCOVERY_TERMS = [
+  "San Francisco housing",
+  "SF housing",
+  "San Francisco apartments",
+  "SF apartments",
+  "Bay Area housing",
+  "Bay Area apartments",
+  "San Francisco sublet",
+  "SF sublet",
+  "San Francisco roommates",
+  "SF lease takeover",
+  "San Francisco loft",
+  "live work loft San Francisco"
+];
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -76,12 +90,13 @@ function parseArgs(argv) {
 function usage() {
   console.log(`Usage:
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
+  node scripts/facebook-monitor.mjs discover [--out monitoring/facebook-discovery.md] [--html monitoring/facebook-discovery.html] [--script monitoring/facebook-open-discovery.sh] [--open] [--terms "SF housing,SF apartments"]
   node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24] [--rotate] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
-  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--open] [--open-watch] [--open-review] [--no-downloads] [--no-groups] [--no-housing-only] [--all] [--state monitoring/facebook-monitor-state.json]
+  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html] [--open] [--open-watch] [--open-review] [--open-discovery] [--no-downloads] [--no-groups] [--no-housing-only] [--no-discovery] [--all] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs downloads [--downloads-dir ~/Downloads] [--out-dir monitoring/facebook-inbox] [--groups] [--housing-only] [--groups-out monitoring/facebook-groups.local.json] [--state monitoring/facebook-monitor-state.json] [--all]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
@@ -105,9 +120,129 @@ function groupSearchUrl(groupUrl, term) {
   return `${clean}/search/?q=${encodeURIComponent(term)}`;
 }
 
+function groupDirectorySearchUrl(term) {
+  return `https://www.facebook.com/search/groups/?q=${encodeURIComponent(term)}`;
+}
+
 function canonicalGroupUrl(url) {
   const match = String(url || "").match(/facebook\.com\/groups\/([A-Za-z0-9._-]+)/i);
   return match ? `https://www.facebook.com/groups/${match[1]}` : String(url || "").replace(/[?#].*$/, "").replace(/\/+$/, "");
+}
+
+function discoveryTerms(opts = {}) {
+  if (!opts.terms) return DEFAULT_GROUP_DISCOVERY_TERMS;
+  return String(opts.terms)
+    .split(",")
+    .map(term => term.trim())
+    .filter(Boolean);
+}
+
+function generateGroupDiscoveryRows(opts = {}) {
+  const rows = [
+    {
+      surface: "joined",
+      label: "Joined groups feed",
+      term: "groups feed",
+      url: "https://www.facebook.com/groups/feed/",
+      priority: "high",
+      action: "Run the bookmarklet here to capture visible joined group links."
+    },
+    {
+      surface: "discover",
+      label: "Groups discover",
+      term: "groups discover",
+      url: "https://www.facebook.com/groups/discover/",
+      priority: "normal",
+      action: "Run the bookmarklet after Facebook shows group suggestions."
+    }
+  ];
+  for (const term of discoveryTerms(opts)) {
+    rows.push({
+      surface: "group-search",
+      label: "Facebook group search",
+      term,
+      url: groupDirectorySearchUrl(term),
+      priority: GROUP_HOUSING_PATTERN.test(term) ? "high" : "normal",
+      action: "Open likely housing groups or run the bookmarklet on the search results."
+    });
+  }
+  return rows;
+}
+
+function generateGroupDiscovery(opts = {}) {
+  const rows = generateGroupDiscoveryRows(opts);
+  const mdOut = opts.out || "monitoring/facebook-discovery.md";
+  const htmlOut = opts.html || "monitoring/facebook-discovery.html";
+  const openOut = opts.script || "monitoring/facebook-open-discovery.sh";
+  const now = new Date().toISOString();
+  const md = [
+    "# Facebook Housing Group Discovery",
+    "",
+    `Generated: ${now}`,
+    "",
+    "Use this before the normal watch loop when `status.setupGaps` says there are no configured groups.",
+    "",
+    "Workflow:",
+    "",
+    "1. Open the discovery page while logged into Facebook.",
+    "2. Click the `Capture FB Housing` bookmarklet on joined-groups and group-search pages.",
+    "3. Let the downloaded `fb-housing-capture-*.json` files land in Downloads.",
+    "4. Run `node scripts/facebook-monitor.mjs run --open-watch --open-review` to import housing-like groups and refresh the watch loop.",
+    "",
+    "| Priority | Surface | Term | URL | Action |",
+    "| --- | --- | --- | --- | --- |",
+    ...rows.map(row => `| ${row.priority} | ${escapeMd(row.label)} | ${escapeMd(row.term)} | ${row.url} | ${escapeMd(row.action)} |`)
+  ].join("\n") + "\n";
+  fs.writeFileSync(outputPath(mdOut), md);
+
+  if (htmlOut) {
+    const html = `<!doctype html>
+<meta charset="utf-8">
+<title>Facebook Housing Group Discovery</title>
+<style>
+body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.45;margin:24px;color:#111}
+a{color:#06c} table{border-collapse:collapse;width:100%;max-width:1160px}td,th{border:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}th{background:#f6f6f6}.high{background:#fff3f3}.low{color:#666}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.actions{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+</style>
+<h1>Facebook Housing Group Discovery</h1>
+<p>Generated ${escapeHtml(now)}. Use this when the monitor has no configured Facebook groups yet.</p>
+<p>Open each link while logged into Facebook, click the <code>Capture FB Housing</code> bookmarklet, then run <code>node scripts/facebook-monitor.mjs run --open-watch --open-review</code>.</p>
+<div class="actions">
+  <a href="facebook-capture-bookmarklet.html">Open bookmarklet installer</a>
+  <a href="facebook-watch.html">Open current watch batch</a>
+  <a href="facebook-review.html">Open review page</a>
+</div>
+<table>
+<thead><tr><th>Priority</th><th>Surface</th><th>Term</th><th>Action</th><th>Open</th></tr></thead>
+<tbody>
+${rows.map(row => `<tr class="${escapeHtml(row.priority)}"><td>${escapeHtml(row.priority)}</td><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.term)}</td><td>${escapeHtml(row.action)}</td><td><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">open</a></td></tr>`).join("\n")}
+</tbody>
+</table>
+`;
+    fs.writeFileSync(outputPath(htmlOut), html);
+  }
+
+  const sh = [
+    "#!/bin/sh",
+    "set -eu",
+    ...rows.map(row => `open ${shellQuote(row.url)}`)
+  ].join("\n") + "\n";
+  fs.writeFileSync(outputPath(openOut), sh, { mode: 0o755 });
+  fs.chmodSync(outputPath(openOut), 0o755);
+
+  if (opts.open) childProcess.spawnSync("open", [outputPath(htmlOut)], { stdio: "ignore" });
+
+  const summary = {
+    generatedAt: now,
+    searches: rows.length,
+    markdown: mdOut,
+    html: htmlOut,
+    openScript: openOut,
+    opened: Boolean(opts.open),
+    nextCommand: "node scripts/facebook-monitor.mjs run --open-watch --open-review"
+  };
+  if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
+  return summary;
 }
 
 function generateSearches(config) {
@@ -725,7 +860,7 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
     setupGaps.push("No configured Facebook housing groups yet.");
   }
   if (!files.length) {
-    setupGaps.push("No imported Facebook capture files yet.");
+    setupGaps.push("No imported Facebook listing capture files yet.");
   }
   if (!candidates.length) {
     setupGaps.push("No scored Facebook candidates yet.");
@@ -789,7 +924,8 @@ function runNext(opts) {
     ? config.facebook.groups.map(group => `- ${group.name} (${group.priority || "normal"}): ${group.url}`)
     : [
       "- No private groups configured yet.",
-      "- Run the bookmarklet on `facebook.com/groups/feed/` or your joined-groups page, then import housing-like groups with `node scripts/facebook-monitor.mjs run --open-watch --open-review`.",
+      "- Generate the group discovery page with `node scripts/facebook-monitor.mjs discover --open`, then run the bookmarklet on joined-groups and group-search pages.",
+      "- Import downloaded discovery captures with `node scripts/facebook-monitor.mjs run --open-watch --open-review`.",
       "- You can also paste copied group links into the local group list: `pbpaste | node scripts/facebook-monitor.mjs groups - --priority high --housing-only`"
     ];
   const commands = {
@@ -807,10 +943,10 @@ function runNext(opts) {
   const counts = snapshot.candidateStatus;
   const setupLines = [];
   if (!snapshot.groups) {
-    setupLines.push("Group discovery is still empty. Capture Facebook's joined-groups/feed page with the bookmarklet so the monitor can build the private-group watch list.");
+    setupLines.push("Group discovery is still empty. Run `node scripts/facebook-monitor.mjs discover --open`, capture joined-groups/search pages with the bookmarklet, then rerun the monitor loop.");
   }
   if (!snapshot.inboxFiles) {
-    setupLines.push("Capture inbox is still empty. Open watch links while logged into Facebook, click the bookmarklet, then rerun `node scripts/facebook-monitor.mjs run --open-review`.");
+    setupLines.push("Listing capture inbox is still empty. Open watch links while logged into Facebook, click the bookmarklet, then rerun `node scripts/facebook-monitor.mjs run --open-review`.");
   }
   if (!snapshot.candidates) {
     setupLines.push("Review queue is empty. It will populate after the first imported capture with housing-like posts.");
@@ -917,11 +1053,15 @@ function runMonitorLoop(opts = {}) {
   const snippetsFile = opts.snippets || "monitoring/facebook-candidates.generated.js";
   const review = opts.review || "monitoring/facebook-review.html";
   const watchHtml = opts.html || "monitoring/facebook-watch.html";
+  const discoveryMd = opts.discovery || "monitoring/facebook-discovery.md";
+  const discoveryHtml = opts["discovery-html"] || "monitoring/facebook-discovery.html";
+  const discoveryScript = opts["discovery-script"] || "monitoring/facebook-open-discovery.sh";
   const openWatch = Boolean(opts.open || opts["open-watch"]) && !opts["no-open-watch"];
   const openReview = Boolean(opts.open || opts["open-review"]) && !opts["no-open-review"];
   const importDownloads = !opts["no-downloads"];
   const importGroups = !opts["no-groups"];
   const housingOnly = !opts["no-housing-only"];
+  const generateDiscovery = !opts["no-discovery"];
   const downloads = importDownloads ? runDownloads({
     ...opts,
     groups: importGroups,
@@ -966,27 +1106,41 @@ function runMonitorLoop(opts = {}) {
     open: openWatch,
     quiet: true
   });
-  if (openReview) childProcess.spawnSync("open", [outputPath(review)], { stdio: "ignore" });
   const snapshot = monitorSnapshot(loadConfig({ ...opts, "groups-out": groupsOut }), {
     ...opts,
     inbox: inboxDir,
     candidates: candidatesFile,
     state
   });
+  const discovery = generateDiscovery ? generateGroupDiscovery({
+    ...opts,
+    out: discoveryMd,
+    html: discoveryHtml,
+    script: discoveryScript,
+    open: false,
+    quiet: true
+  }) : null;
+  const openDiscovery = Boolean(opts.open || opts["open-discovery"] || (openWatch && !snapshot.groups)) && !opts["no-open-discovery"];
+  if (openDiscovery && discovery) childProcess.spawnSync("open", [outputPath(discovery.html)], { stdio: "ignore" });
+  if (openReview) childProcess.spawnSync("open", [outputPath(review)], { stdio: "ignore" });
   const summary = {
     generatedAt: new Date().toISOString(),
     downloads,
     scan,
     next,
+    discovery,
     status: snapshot,
     opened: {
       watch: openWatch,
-      review: openReview
+      review: openReview,
+      discovery: openDiscovery
     },
     commands: {
       run: "node scripts/facebook-monitor.mjs run --open-watch --open-review",
+      discover: "node scripts/facebook-monitor.mjs discover --open",
       review: `open ${shellQuote(outputPath(review))}`,
       watch: `open ${shellQuote(outputPath(watchHtml))}`,
+      discovery: discovery ? `open ${shellQuote(outputPath(discovery.html))}` : null,
       markSeen: "node scripts/facebook-monitor.mjs scan --update-state",
       publish: `node scripts/facebook-monitor.mjs publish ${candidatesFile} --select <handle-or-hash> --apply`
     }
@@ -1469,6 +1623,8 @@ if (!cmd || cmd === "help") {
   usage();
 } else if (cmd === "searches") {
   writeSearches(generateSearches(loadConfig(opts)), opts);
+} else if (cmd === "discover") {
+  generateGroupDiscovery(opts);
 } else if (cmd === "watch") {
   generateWatchBatch(loadConfig(opts), opts);
 } else if (cmd === "bookmarklet") {
