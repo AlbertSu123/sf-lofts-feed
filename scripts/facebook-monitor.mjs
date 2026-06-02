@@ -90,6 +90,7 @@ function parseArgs(argv) {
 function usage() {
   console.log(`Usage:
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
+  node scripts/facebook-monitor.mjs setup [--limit 40] [--open] [--rotate] [--bookmarklet monitoring/facebook-capture-bookmarklet.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html]
   node scripts/facebook-monitor.mjs discover [--out monitoring/facebook-discovery.md] [--html monitoring/facebook-discovery.html] [--script monitoring/facebook-open-discovery.sh] [--open] [--terms "SF housing,SF apartments"]
   node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24] [--rotate] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
@@ -447,7 +448,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 <textarea readonly>${escapeHtml(href)}</textarea>
 `;
   fs.writeFileSync(outputPath(out), html);
-  console.log(JSON.stringify({ out, bytes: html.length }, null, 2));
+  const summary = { out, bytes: html.length };
+  if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
+  return summary;
 }
 
 function readStdin() {
@@ -1010,7 +1013,7 @@ function runDoctor(opts = {}) {
     reminderInstalled: launchAgent.installed
   };
   const nextActions = monitorNextActions(snapshot, downloads, generatedFiles, launchAgent, opts);
-  console.log(JSON.stringify({
+  const summary = {
     generatedAt: new Date().toISOString(),
     criteria: {
       maxPricePerBedroom: config.criteria.maxPricePerBedroom,
@@ -1023,6 +1026,95 @@ function runDoctor(opts = {}) {
     generatedFiles,
     launchAgent,
     nextActions
+  };
+  if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
+  return summary;
+}
+
+function runSetup(opts = {}) {
+  const candidatesFile = opts.candidates || opts.out || DEFAULT_CANDIDATES_PATH;
+  const inboxDir = opts.inbox || "monitoring/facebook-inbox";
+  const state = opts.state || DEFAULT_STATE_PATH;
+  const review = opts.review || "monitoring/facebook-review.html";
+  const bookmarklet = generateBookmarklet({
+    ...opts,
+    out: opts.bookmarklet || "monitoring/facebook-capture-bookmarklet.html",
+    quiet: true
+  });
+  const discovery = generateGroupDiscovery({
+    ...opts,
+    out: opts.discovery || "monitoring/facebook-discovery.md",
+    html: opts["discovery-html"] || "monitoring/facebook-discovery.html",
+    script: opts["discovery-script"] || "monitoring/facebook-open-discovery.sh",
+    open: false,
+    quiet: true
+  });
+  const nextOpts = {
+    ...opts,
+    out: opts.next || "monitoring/facebook-next.md",
+    watch: opts.watch || "monitoring/facebook-watch.md",
+    html: opts.html || "monitoring/facebook-watch.html",
+    script: opts.script || "monitoring/facebook-open-watch.sh",
+    candidates: candidatesFile,
+    review,
+    limit: opts.limit || 40,
+    state,
+    open: false,
+    quiet: true
+  };
+  if (!opts.rotate) nextOpts["no-rotate"] = true;
+  const next = runNext(nextOpts);
+  const scan = runScan({
+    ...opts,
+    inbox: inboxDir,
+    out: candidatesFile,
+    snippets: opts.snippets || "monitoring/facebook-candidates.generated.js",
+    review,
+    state,
+    open: false,
+    quiet: true
+  });
+  const doctor = runDoctor({
+    ...opts,
+    inbox: inboxDir,
+    candidates: candidatesFile,
+    state,
+    bookmarklet: bookmarklet.out,
+    discovery: discovery.markdown,
+    "discovery-html": discovery.html,
+    "discovery-script": discovery.openScript,
+    next: next.out,
+    watch: next.watchHtml ? opts.watch || "monitoring/facebook-watch.md" : opts.watch,
+    html: next.watchHtml,
+    script: next.openScript,
+    review,
+    quiet: true
+  });
+  const opened = {
+    bookmarklet: false,
+    discovery: false,
+    watch: false,
+    review: false
+  };
+  if (opts.open) {
+    childProcess.spawnSync("open", [outputPath(bookmarklet.out)], { stdio: "ignore" });
+    childProcess.spawnSync("open", [outputPath(discovery.html)], { stdio: "ignore" });
+    childProcess.spawnSync("open", [outputPath(next.watchHtml || "monitoring/facebook-watch.html")], { stdio: "ignore" });
+    childProcess.spawnSync("open", [outputPath(review)], { stdio: "ignore" });
+    opened.bookmarklet = true;
+    opened.discovery = true;
+    opened.watch = true;
+    opened.review = true;
+  }
+  console.log(JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    bookmarklet,
+    discovery,
+    next,
+    scan,
+    doctor,
+    opened,
+    nextCommand: "node scripts/facebook-monitor.mjs run --open-watch --open-review"
   }, null, 2));
 }
 
@@ -1754,6 +1846,8 @@ if (!cmd || cmd === "help") {
   usage();
 } else if (cmd === "searches") {
   writeSearches(generateSearches(loadConfig(opts)), opts);
+} else if (cmd === "setup") {
+  runSetup(opts);
 } else if (cmd === "discover") {
   generateGroupDiscovery(opts);
 } else if (cmd === "watch") {

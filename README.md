@@ -6,6 +6,14 @@ Static GitHub Pages feed for SF apartment/loft leads.
 
 Facebook private groups do not expose a clean public feed, so the efficient path is a human-in-the-browser monitor:
 
+0. Prepare all local monitor pages and run a readiness check:
+
+```sh
+node scripts/facebook-monitor.mjs setup
+```
+
+This refreshes the bookmarklet installer, group-discovery page, watch batch, next-run briefing, review page, and doctor output. Add `--open` if you want those local pages opened after generation.
+
 1. Discover or add private group URLs to `monitoring/facebook-groups.local.json` using the example in `monitoring/facebook-monitor.config.json`.
 
 Generate a group-discovery page when `status.setupGaps` says no groups are configured:
