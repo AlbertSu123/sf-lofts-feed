@@ -31,7 +31,7 @@ Generate a group-discovery page when `status.setupGaps` says no groups are confi
 node scripts/facebook-monitor.mjs discover --open
 ```
 
-Open the discovery links while logged into Facebook, click the `Capture FB Housing` bookmarklet on joined-groups and group-search pages, then import the downloaded discovery captures with the normal loop:
+Open the discovery links while logged into Facebook, click the `Capture FB Housing` bookmarklet on joined-groups and group-search pages, then import the downloaded discovery captures with the normal loop. Groups captured from joined-groups/feed surfaces are automatically marked `joined` in the local status file unless you already marked them noisy, inaccessible, or skipped:
 
 ```sh
 node scripts/facebook-monitor.mjs run --open-group-watch --open-review
@@ -70,10 +70,11 @@ node scripts/facebook-monitor.mjs group-status "Bay Area Rooms and Apartments" -
 
 Group status is stored in ignored `monitoring/facebook-group-status.local.json`. Statuses such as `inaccessible`, `noisy`, or `skip` default to `watch:false`, which removes that group from generated watch searches while leaving it visible in coverage.
 
-You can also run the capture bookmarklet on Facebook Groups pages such as `facebook.com/groups/feed/` or your joined-groups list, then import only housing-like groups:
+You can also run the capture bookmarklet on Facebook Groups pages such as `facebook.com/groups/feed/` or your joined-groups list, then import only housing-like groups. Use `--mark-joined` when pasting plain URLs from a joined-groups page or another trusted joined-membership source:
 
 ```sh
 pbpaste | node scripts/facebook-monitor.mjs groups - --priority high --housing-only
+pbpaste | node scripts/facebook-monitor.mjs groups - --priority high --housing-only --mark-joined
 ```
 
 Run the full monitoring loop. This imports any new `fb-housing-capture-*.json` files from Downloads, imports housing-like groups found in those captures, scores the inbox, refreshes the review page, and creates the next stale-prioritized watch batch:

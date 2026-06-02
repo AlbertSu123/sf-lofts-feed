@@ -170,14 +170,14 @@ function usage() {
   node scripts/facebook-monitor.mjs group-watch [--out monitoring/facebook-group-watch.md] [--html monitoring/facebook-group-watch.html] [--script monitoring/facebook-open-groups.sh] [--open] [--open-links] [--limit 40]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
   node scripts/facebook-monitor.mjs seed-groups [--seeds monitoring/facebook-group-seeds.json] [--out monitoring/facebook-groups.local.json]
-  node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
+  node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--mark-joined] [--out monitoring/facebook-groups.local.json] [--group-status monitoring/facebook-group-status.local.json]
   node scripts/facebook-monitor.mjs group-status [group-url-or-name] [--list] [--status joined|pending|inaccessible|noisy|skip|unverified] [--watch true|false] [--quality good|ok|low] [--priority high|normal|low] [--notes "..."] [--group-status monitoring/facebook-group-status.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs doctor [--downloads-dir ~/Downloads] [--state monitoring/facebook-monitor-state.json] [--candidates monitoring/facebook-candidates.json] [--inbox monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24] [--out monitoring/facebook-coverage.md] [--html monitoring/facebook-coverage.html]
   node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--digest monitoring/facebook-digest.md] [--coverage monitoring/facebook-coverage.md] [--coverage-html monitoring/facebook-coverage.html] [--group-watch monitoring/facebook-group-watch.md] [--group-watch-html monitoring/facebook-group-watch.html] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html] [--open] [--open-watch] [--open-group-watch] [--open-links] [--open-review] [--open-discovery] [--no-downloads] [--no-groups] [--no-housing-only] [--no-discovery] [--all] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--group-watch monitoring/facebook-group-watch.md] [--group-watch-html monitoring/facebook-group-watch.html] [--group-watch-script monitoring/facebook-open-groups.sh] [--limit 40] [--group-limit 40] [--open] [--open-group-watch] [--open-links] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
-  node scripts/facebook-monitor.mjs downloads [--downloads-dir ~/Downloads] [--out-dir monitoring/facebook-inbox] [--groups] [--housing-only] [--groups-out monitoring/facebook-groups.local.json] [--state monitoring/facebook-monitor-state.json] [--all]
+  node scripts/facebook-monitor.mjs downloads [--downloads-dir ~/Downloads] [--out-dir monitoring/facebook-inbox] [--groups] [--housing-only] [--mark-joined] [--groups-out monitoring/facebook-groups.local.json] [--group-status monitoring/facebook-group-status.local.json] [--state monitoring/facebook-monitor-state.json] [--all]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--digest monitoring/facebook-digest.md] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
   node scripts/facebook-monitor.mjs scan [--inbox monitoring/facebook-inbox] [--digest monitoring/facebook-digest.md] [--open] [--all] [--update-state]
@@ -758,6 +758,13 @@ function extractGroupUrls(text) {
   return [...urls];
 }
 
+function isJoinedGroupDiscoverySurface(row, parent = {}) {
+  const text = `${row?.pageUrl || ""}\n${row?.pageTitle || ""}\n${parent?.pageUrl || ""}\n${parent?.pageTitle || ""}`;
+  if (/facebook\.com\/groups\/(?:feed|joins|your_groups|browse\/your_groups)\b/i.test(text)) return true;
+  if (/\b(joined groups|your groups|groups feed)\b/i.test(text) && !/facebook\.com\/search\/groups/i.test(text)) return true;
+  return false;
+}
+
 function normalizeGroupName(name, url) {
   const cleaned = cleanText(String(name || "").replace(/\s+/g, " "));
   return cleaned && cleaned.length <= 140 ? cleaned : inferGroupName(url);
@@ -781,11 +788,17 @@ function extractGroupEntries(raw, opts = {}) {
       const entry = typeof row === "string" ? { url: row } : row;
       const url = canonicalGroupUrl(entry.url || entry.groupUrl || "");
       if (!url) continue;
+      const joinedLike = isJoinedGroupDiscoverySurface(entry, Array.isArray(parsed) ? {} : parsed);
+      const priority = entry.priority || opts.priority || (joinedLike ? "high" : "normal");
       entries.push({
         name: normalizeGroupName(entry.name || entry.title || entry.label, url),
         url,
-        priority: entry.priority || opts.priority || "normal",
-        notes: entry.notes || (entry.pageTitle ? `Captured from ${entry.pageTitle}` : "Imported via facebook-monitor groups"),
+        priority,
+        notes: entry.notes || (joinedLike
+          ? "Imported from joined-groups capture"
+          : entry.pageTitle ? `Captured from ${entry.pageTitle}` : "Imported via facebook-monitor groups"),
+        accessStatus: joinedLike ? "joined" : "",
+        quality: joinedLike ? "ok" : "",
         housingLike: isHousingGroup({ ...entry, url })
       });
     }
@@ -964,14 +977,55 @@ function importGroupEntries(entries, opts) {
   }
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify({ groups }, null, 2) + "\n");
+  const statusImport = syncImportedGroupStatuses(entries, opts);
   return {
     out: path.relative(ROOT, outFile),
     added: added.length,
     total: groups.length,
     housingOnly: Boolean(opts["housing-only"]),
     matched: entries.length,
+    statusesUpdated: statusImport.updated,
+    statusFile: statusImport.file ? path.relative(ROOT, statusImport.file) : null,
     groups: added
   };
+}
+
+function importedGroupStatus(entry, existing, opts = {}) {
+  const shouldMarkJoined = Boolean(opts["mark-joined"]) || entry.accessStatus === "joined";
+  if (!shouldMarkJoined) return null;
+  const existingStatus = String(existing?.status || "").toLowerCase();
+  const canReplace = !existingStatus || existingStatus === "unverified" || existingStatus === "pending" || opts["force-status"];
+  if (!canReplace) return null;
+  const status = "joined";
+  return {
+    name: entry.name || existing?.name || inferGroupName(entry.url),
+    url: entry.url,
+    status,
+    watch: opts.watch !== undefined ? parseWatchValue(opts.watch, true) : true,
+    priority: opts.priority || entry.priority || existing?.priority || "high",
+    quality: opts.quality || entry.quality || existing?.quality || "ok",
+    notes: opts.notes || entry.notes || existing?.notes || "Imported from joined-groups capture",
+    checkedAt: new Date().toISOString()
+  };
+}
+
+function syncImportedGroupStatuses(entries, opts = {}) {
+  const statusable = entries.filter(entry => entry?.url && (opts["mark-joined"] || entry.accessStatus === "joined"));
+  if (!statusable.length) return { file: null, updated: 0 };
+  const file = groupStatusFile(readJson(CONFIG_PATH), opts);
+  const existingRows = normalizeGroupStatusRows(readJsonIfExists(file, { groups: [] }));
+  const byUrl = new Map(existingRows.map(row => [row.url, row]));
+  let updated = 0;
+  for (const entry of statusable) {
+    const current = byUrl.get(entry.url);
+    const next = importedGroupStatus(entry, current, opts);
+    if (!next) continue;
+    byUrl.set(entry.url, next);
+    updated += 1;
+  }
+  if (!updated) return { file, updated: 0 };
+  writeGroupStatusFile(file, [...byUrl.values()].sort((a, b) => a.name.localeCompare(b.name)));
+  return { file, updated };
 }
 
 function slug(value) {
