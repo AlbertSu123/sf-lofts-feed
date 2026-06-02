@@ -1,0 +1,40 @@
+{
+  "groups": [
+    {
+      "name": "Bay Area/SF Housing, Rentals, Sublets, Roommates, flexible leases",
+      "url": "https://www.facebook.com/groups/1105487206638421/",
+      "priority": "high",
+      "notes": "Public seed from Facebook group search. Verify membership and current posting quality before relying on it."
+    },
+    {
+      "name": "Bay Area, Looking Housing, Apartment Room Rentals, Sublets & Roommate Finds",
+      "url": "https://www.facebook.com/groups/bay.area.housing.sublease.rentals/",
+      "priority": "high",
+      "notes": "Public seed from Facebook group search. Broad Bay Area surface for sublets, rooms, and apartment leads."
+    },
+    {
+      "name": "San Francisco Housing, Rooms, Apartments, Sublets",
+      "url": "https://www.facebook.com/groups/843764532374203/",
+      "priority": "high",
+      "notes": "Public seed from Facebook group search. Strong city-specific housing surface."
+    },
+    {
+      "name": "San Francisco Housing, Rooms, Apartments, Sublets (alternate group)",
+      "url": "https://www.facebook.com/groups/2176716625896699/",
+      "priority": "normal",
+      "notes": "Public seed from Facebook post search result. Verify exact group identity after opening."
+    },
+    {
+      "name": "San Francisco Rooms for rent, SFSU, UCSF, USF Off Campus Housing",
+      "url": "https://www.facebook.com/groups/san.francisco.bay.area.rooms.roommates/",
+      "priority": "normal",
+      "notes": "Public seed from Facebook group search. Mostly room/shared-housing oriented, but useful for fallback monitoring."
+    },
+    {
+      "name": "San Francisco State University (SFSU) Housing, Rooms, Apartments, Sublets",
+      "url": "https://www.facebook.com/groups/735620380504441/",
+      "priority": "low",
+      "notes": "Public seed from Facebook group search. Lower priority because student housing may skew shared or seasonal."
+    }
+  ]
+}

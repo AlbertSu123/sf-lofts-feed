@@ -9,6 +9,7 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..")
 const CONFIG_PATH = path.join(ROOT, "monitoring/facebook-monitor.config.json");
 const DEFAULT_CANDIDATES_PATH = "monitoring/facebook-candidates.json";
 const DEFAULT_STATE_PATH = "monitoring/facebook-monitor-state.json";
+const DEFAULT_GROUP_SEEDS_PATH = "monitoring/facebook-group-seeds.json";
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
 const GROUP_HOUSING_PATTERN = /housing|apartment|apartments|apt\b|room|roommate|roommates|sublet|sublease|lease|rent|rental|loft|live.?work/i;
 const DEFAULT_GROUP_DISCOVERY_TERMS = [
@@ -94,6 +95,7 @@ function usage() {
   node scripts/facebook-monitor.mjs discover [--out monitoring/facebook-discovery.md] [--html monitoring/facebook-discovery.html] [--script monitoring/facebook-open-discovery.sh] [--open] [--terms "SF housing,SF apartments"]
   node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24] [--rotate] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
+  node scripts/facebook-monitor.mjs seed-groups [--seeds monitoring/facebook-group-seeds.json] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs doctor [--downloads-dir ~/Downloads] [--state monitoring/facebook-monitor-state.json] [--candidates monitoring/facebook-candidates.json] [--inbox monitoring/facebook-inbox]
@@ -587,6 +589,26 @@ function runGroups(args, opts) {
   console.log(JSON.stringify(result, null, 2));
 }
 
+function runSeedGroups(opts = {}) {
+  const config = readJson(CONFIG_PATH);
+  const seedFile = opts.seeds || opts.seed || DEFAULT_GROUP_SEEDS_PATH;
+  const out = opts.out || opts["groups-out"] || config.facebook.localGroupsFile || "monitoring/facebook-groups.local.json";
+  const raw = fs.readFileSync(outputPath(seedFile), "utf8");
+  const entries = extractGroupEntries(raw, {
+    ...opts,
+    "housing-only": true
+  });
+  const result = importGroupEntries(entries, {
+    ...opts,
+    "housing-only": true,
+    out
+  });
+  console.log(JSON.stringify({
+    ...result,
+    seeds: seedFile
+  }, null, 2));
+}
+
 function importGroupEntries(entries, opts) {
   const outFile = outputPath(opts.out || opts["groups-out"] || "monitoring/facebook-groups.local.json");
   if (!entries.length) {
@@ -975,7 +997,8 @@ function monitorNextActions(snapshot, downloads, generatedFiles, launchAgent, op
     actions.push("Generate/install the bookmarklet: node scripts/facebook-monitor.mjs bookmarklet --out monitoring/facebook-capture-bookmarklet.html");
   }
   if (!snapshot.groups) {
-    actions.push("Discover housing groups: node scripts/facebook-monitor.mjs discover --open");
+    actions.push("Bootstrap public SF/Bay Area housing groups: node scripts/facebook-monitor.mjs seed-groups");
+    actions.push("Discover joined/private housing groups: node scripts/facebook-monitor.mjs discover --open");
   }
   if (downloads.unimported) {
     actions.push("Import pending Facebook captures: node scripts/facebook-monitor.mjs run --open-watch --open-review");
@@ -1854,6 +1877,13 @@ if (!cmd || cmd === "help") {
   generateWatchBatch(loadConfig(opts), opts);
 } else if (cmd === "bookmarklet") {
   generateBookmarklet(opts);
+} else if (cmd === "seed-groups") {
+  try {
+    runSeedGroups(opts);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
 } else if (cmd === "groups") {
   try {
     runGroups(args, opts);

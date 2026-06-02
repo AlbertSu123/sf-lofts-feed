@@ -16,6 +16,15 @@ This refreshes the bookmarklet installer, group-discovery page, watch batch, nex
 
 1. Discover or add private group URLs to `monitoring/facebook-groups.local.json` using the example in `monitoring/facebook-monitor.config.json`.
 
+Bootstrap with public SF/Bay Area housing group seeds:
+
+```sh
+node scripts/facebook-monitor.mjs seed-groups
+node scripts/facebook-monitor.mjs next --limit 60
+```
+
+The seed list is tracked in `monitoring/facebook-group-seeds.json`; the imported local group file stays ignored by git. Keep adding your actual joined/private groups with the discovery flow below.
+
 Generate a group-discovery page when `status.setupGaps` says no groups are configured:
 
 ```sh
