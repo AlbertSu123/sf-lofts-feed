@@ -23,7 +23,7 @@ node scripts/facebook-monitor.mjs seed-groups
 node scripts/facebook-monitor.mjs next --limit 60
 ```
 
-The seed list is tracked in `monitoring/facebook-group-seeds.json`; the imported local group file stays ignored by git. Keep adding your actual joined/private groups with the discovery flow below.
+The seed list is tracked in `monitoring/facebook-group-seeds.json`; it currently includes 21 public SF/Bay Area, USF, and SFSU housing-group surfaces. The imported local group file stays ignored by git. Keep adding your actual joined/private groups with the discovery flow below.
 
 Generate a group-discovery page when `status.setupGaps` says no groups are configured:
 
