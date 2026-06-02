@@ -7,6 +7,8 @@ NEXT_MD="${FACEBOOK_MONITOR_NEXT_MD:-monitoring/facebook-next.md}"
 WATCH_HTML="${FACEBOOK_MONITOR_WATCH_HTML:-monitoring/facebook-watch.html}"
 WATCH_MD="${FACEBOOK_MONITOR_WATCH_MD:-monitoring/facebook-watch.md}"
 OPEN_SCRIPT="${FACEBOOK_MONITOR_OPEN_SCRIPT:-monitoring/facebook-open-watch.sh}"
+REVIEW_HTML="${FACEBOOK_MONITOR_REVIEW_HTML:-monitoring/facebook-review.html}"
+RUN_JSON="${FACEBOOK_MONITOR_RUN_JSON:-/tmp/sf-lofts-facebook-monitor-run.json}"
 
 export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 NODE_BIN="${NODE_BIN:-}"
@@ -19,15 +21,17 @@ if [ -z "$NODE_BIN" ]; then
 fi
 
 cd "$ROOT"
-"$NODE_BIN" scripts/facebook-monitor.mjs next \
-  --out "$NEXT_MD" \
+"$NODE_BIN" scripts/facebook-monitor.mjs run \
+  --groups \
+  --housing-only \
+  --next "$NEXT_MD" \
+  --review "$REVIEW_HTML" \
   --watch "$WATCH_MD" \
   --html "$WATCH_HTML" \
   --script "$OPEN_SCRIPT" \
-  --limit "$LIMIT" >/tmp/sf-lofts-facebook-monitor-next.json
-
-open "$ROOT/$WATCH_HTML"
+  --limit "$LIMIT" \
+  --open-watch >"$RUN_JSON"
 
 if command -v osascript >/dev/null 2>&1; then
-  osascript -e 'display notification "Facebook housing next-run briefing is ready." with title "SF Lofts Feed" subtitle "Watch page refreshed; capture posts, then scan the inbox."' >/dev/null 2>&1 || true
+  osascript -e 'display notification "Facebook housing loop is ready." with title "SF Lofts Feed" subtitle "Downloads imported, review scored, watch page refreshed."' >/dev/null 2>&1 || true
 fi

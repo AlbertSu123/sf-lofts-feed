@@ -20,9 +20,9 @@ function readJsonIfExists(file, fallback) {
   return fs.existsSync(file) ? readJson(file) : fallback;
 }
 
-function loadConfig() {
+function loadConfig(opts = {}) {
   const config = readJson(CONFIG_PATH);
-  const localGroupsPath = path.join(ROOT, config.facebook.localGroupsFile || "monitoring/facebook-groups.local.json");
+  const localGroupsPath = outputPath(opts["groups-out"] || opts["groups-file"] || config.facebook.localGroupsFile || "monitoring/facebook-groups.local.json");
   const local = readJsonIfExists(localGroupsPath, {});
   const groups = normalizeGroups(config.facebook.groupUrls)
     .concat(normalizeGroups(local.groupUrls))
@@ -81,6 +81,7 @@ function usage() {
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
+  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--open] [--open-watch] [--open-review] [--no-downloads] [--no-groups] [--no-housing-only] [--all] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs downloads [--downloads-dir ~/Downloads] [--out-dir monitoring/facebook-inbox] [--groups] [--housing-only] [--groups-out monitoring/facebook-groups.local.json] [--state monitoring/facebook-monitor-state.json] [--all]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
@@ -196,7 +197,7 @@ function generateWatchBatch(config, opts) {
     "2. Sort or filter by recent posts where Facebook exposes that control.",
     `3. Run \`${capturePath}\` on the results page.`,
     "4. Save copied JSON under `monitoring/facebook-inbox/`.",
-    "5. Run the score command from the README.",
+    "5. Run `node scripts/facebook-monitor.mjs run --open-review` to import downloads, score leads, and refresh the next batch.",
     "",
     "| Priority | Surface | Term | URL |",
     "| --- | --- | --- | --- |",
@@ -591,7 +592,7 @@ function runDownloads(opts = {}) {
   fs.mkdirSync(path.dirname(statePath), { recursive: true });
   fs.writeFileSync(statePath, JSON.stringify(nextState, null, 2) + "\n");
 
-  console.log(JSON.stringify({
+  const summary = {
     downloadsDir,
     scanned: files.length,
     imported: imported.length,
@@ -603,7 +604,9 @@ function runDownloads(opts = {}) {
     groupsOut: opts["groups-out"] || "monitoring/facebook-groups.local.json",
     imports: imported,
     skippedFiles: skipped
-  }, null, 2));
+  };
+  if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
+  return summary;
 }
 
 function captureTimestamp(post, file) {
@@ -689,8 +692,9 @@ function runScan(opts) {
     state: opts.state || "monitoring/facebook-monitor-state.json"
   };
   if (!opts.all) scoreOpts["new-only"] = true;
-  runScore(files, scoreOpts);
+  const summary = runScore(files, scoreOpts);
   if (opts.open) childProcess.spawnSync("open", [outputPath(scoreOpts.review)], { stdio: "ignore" });
+  return summary;
 }
 
 function countStatuses(candidates) {
@@ -741,15 +745,15 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
 }
 
 function runStatus(opts = {}) {
-  console.log(JSON.stringify(monitorSnapshot(loadConfig(), opts), null, 2));
+  console.log(JSON.stringify(monitorSnapshot(loadConfig(opts), opts), null, 2));
 }
 
 function runCoverage(opts = {}) {
-  console.log(JSON.stringify(groupCaptureCoverage(loadConfig(), opts), null, 2));
+  console.log(JSON.stringify(groupCaptureCoverage(loadConfig(opts), opts), null, 2));
 }
 
 function runNext(opts) {
-  const config = loadConfig();
+  const config = loadConfig(opts);
   const out = opts.out || "monitoring/facebook-next.md";
   const rotate = !opts["no-rotate"];
   const coverage = groupCaptureCoverage(config, opts);
@@ -774,8 +778,10 @@ function runNext(opts) {
       "- Paste copied group links into the local group list: `pbpaste | node scripts/facebook-monitor.mjs groups - --priority high`"
     ];
   const commands = {
+    monitorRun: "node scripts/facebook-monitor.mjs run --limit 40 --open-watch --open-review",
     nextRun: "node scripts/facebook-monitor.mjs next --limit 40 --open",
     importGroups: "pbpaste | node scripts/facebook-monitor.mjs groups - --priority high",
+    importDownloads: "node scripts/facebook-monitor.mjs downloads --groups --housing-only",
     coverage: "node scripts/facebook-monitor.mjs coverage",
     captureInbox: "pbpaste | node scripts/facebook-monitor.mjs inbox - --name <group-or-search-name>",
     scan: "node scripts/facebook-monitor.mjs scan --open",
@@ -833,8 +839,9 @@ function runNext(opts) {
     "## Next Commands",
     "",
     "```sh",
-    commands.nextRun,
+    commands.monitorRun,
     commands.importGroups,
+    commands.importDownloads,
     commands.coverage,
     `open ${shellQuote(outputPath(watch.html || "monitoring/facebook-watch.html"))}`,
     commands.captureInbox,
@@ -848,7 +855,7 @@ function runNext(opts) {
   ].join("\n") + "\n";
   fs.writeFileSync(outputPath(out), md);
   if (opts.open) childProcess.spawnSync("open", [outputPath(watch.html || "monitoring/facebook-watch.html")], { stdio: "ignore" });
-  console.log(JSON.stringify({
+  const summary = {
     out: relativeOut(out),
     watchHtml: relativeOut(watch.html || "monitoring/facebook-watch.html"),
     openScript: relativeOut(watch.openScript),
@@ -866,7 +873,91 @@ function runNext(opts) {
       neverCapturedGroups: coverage.neverCapturedGroups
     },
     commands
-  }, null, 2));
+  };
+  if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
+  return summary;
+}
+
+function runMonitorLoop(opts = {}) {
+  const inboxDir = opts.inbox || opts["out-dir"] || "monitoring/facebook-inbox";
+  const state = opts.state || DEFAULT_STATE_PATH;
+  const groupsOut = opts["groups-out"] || "monitoring/facebook-groups.local.json";
+  const review = opts.review || "monitoring/facebook-review.html";
+  const watchHtml = opts.html || "monitoring/facebook-watch.html";
+  const openWatch = Boolean(opts.open || opts["open-watch"]) && !opts["no-open-watch"];
+  const openReview = Boolean(opts.open || opts["open-review"]) && !opts["no-open-review"];
+  const importDownloads = !opts["no-downloads"];
+  const importGroups = !opts["no-groups"];
+  const housingOnly = !opts["no-housing-only"];
+  const downloads = importDownloads ? runDownloads({
+    ...opts,
+    groups: importGroups,
+    "housing-only": housingOnly,
+    "out-dir": inboxDir,
+    "groups-out": groupsOut,
+    state,
+    quiet: true
+  }) : {
+    downloadsDir: resolveFsPath(opts["downloads-dir"] || path.join(process.env.HOME || ".", "Downloads")),
+    scanned: 0,
+    imported: 0,
+    skipped: 0,
+    posts: 0,
+    groupFilesImported: 0,
+    state,
+    inboxDir,
+    groupsOut,
+    imports: [],
+    skippedFiles: []
+  };
+  const scan = runScan({
+    ...opts,
+    inbox: inboxDir,
+    out: opts.out || DEFAULT_CANDIDATES_PATH,
+    snippets: opts.snippets || "monitoring/facebook-candidates.generated.js",
+    review,
+    state,
+    open: false,
+    quiet: true
+  });
+  const next = runNext({
+    ...opts,
+    out: opts.next || "monitoring/facebook-next.md",
+    watch: opts.watch || "monitoring/facebook-watch.md",
+    html: watchHtml,
+    script: opts.script || "monitoring/facebook-open-watch.sh",
+    limit: opts.limit || 40,
+    state,
+    open: openWatch,
+    quiet: true
+  });
+  if (openReview) childProcess.spawnSync("open", [outputPath(review)], { stdio: "ignore" });
+  const snapshot = monitorSnapshot(loadConfig({ ...opts, "groups-out": groupsOut }), {
+    ...opts,
+    inbox: inboxDir,
+    candidates: opts.out || DEFAULT_CANDIDATES_PATH,
+    state
+  });
+  const summary = {
+    generatedAt: new Date().toISOString(),
+    downloads,
+    scan,
+    next,
+    status: snapshot,
+    opened: {
+      watch: openWatch,
+      review: openReview
+    },
+    commands: {
+      run: "node scripts/facebook-monitor.mjs run --open-watch --open-review",
+      review: `open ${shellQuote(outputPath(review))}`,
+      watch: `open ${shellQuote(outputPath(watchHtml))}`,
+      markSeen: "node scripts/facebook-monitor.mjs scan --update-state",
+      publish: "node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash> --apply"
+    }
+  };
+  console.log(JSON.stringify(summary, null, 2));
+  return summary;
 }
 
 function escapeMd(value) {
@@ -1207,7 +1298,7 @@ function generateSnippet(c) {
 }
 
 function runScore(files, opts) {
-  const config = loadConfig();
+  const config = loadConfig(opts);
   const existing = loadExisting(opts.existing);
   const statePath = opts.state ? outputPath(opts.state) : null;
   const state = statePath ? readJsonIfExists(statePath, { seenHashes: [] }) : { seenHashes: [] };
@@ -1251,7 +1342,7 @@ function runScore(files, opts) {
     signals: c.signals.slice(0, 5).join(", "),
     summary: c.summary
   }));
-  console.log(JSON.stringify({
+  const summary = {
     scannedPosts: posts.length,
     candidates: candidates.length,
     seenBefore: candidates.filter(c => c.seenBefore).length,
@@ -1265,7 +1356,8 @@ function runScore(files, opts) {
     state: opts.state || null,
     stateUpdated: Boolean(opts["update-state"] && statePath),
     top
-  }, null, 2));
+  };
+  if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
 
   if (opts["update-state"] && statePath) {
     const next = {
@@ -1275,6 +1367,7 @@ function runScore(files, opts) {
     };
     fs.writeFileSync(statePath, JSON.stringify(next, null, 2) + "\n");
   }
+  return summary;
 }
 
 function selectCandidates(candidates, select) {
@@ -1340,9 +1433,9 @@ const { args, opts } = parseArgs(rest);
 if (!cmd || cmd === "help") {
   usage();
 } else if (cmd === "searches") {
-  writeSearches(generateSearches(loadConfig()), opts);
+  writeSearches(generateSearches(loadConfig(opts)), opts);
 } else if (cmd === "watch") {
-  generateWatchBatch(loadConfig(), opts);
+  generateWatchBatch(loadConfig(opts), opts);
 } else if (cmd === "bookmarklet") {
   generateBookmarklet(opts);
 } else if (cmd === "groups") {
@@ -1356,6 +1449,8 @@ if (!cmd || cmd === "help") {
   runStatus(opts);
 } else if (cmd === "coverage") {
   runCoverage(opts);
+} else if (cmd === "run") {
+  runMonitorLoop(opts);
 } else if (cmd === "next") {
   runNext(opts);
 } else if (cmd === "downloads") {
