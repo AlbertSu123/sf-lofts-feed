@@ -33,7 +33,7 @@ Create the next-run briefing and refreshed watch page:
 node scripts/facebook-monitor.mjs next --limit 40 --open
 ```
 
-`next` advances a local rotation cursor in `monitoring/facebook-monitor-state.json`, so large group lists are covered across multiple runs instead of showing the same first links every time. Use `--no-rotate` when you want a static batch.
+`next` advances a local rotation cursor in `monitoring/facebook-monitor-state.json`, so large group lists are covered across multiple runs instead of showing the same first links every time. It also prioritizes stale or never-captured groups first; use `--no-focus-stale` to disable that, or `--no-rotate` when you want a static batch.
 
 2. If you only need the watch batch without the next-run briefing:
 

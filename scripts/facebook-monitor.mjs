@@ -81,7 +81,7 @@ function usage() {
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
-  node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--state monitoring/facebook-monitor-state.json]
+  node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
   node scripts/facebook-monitor.mjs scan [--inbox monitoring/facebook-inbox] [--open] [--all] [--update-state]
@@ -129,8 +129,10 @@ function generateSearches(config) {
   return rows;
 }
 
-function sortedSearchRows(rows) {
-  return [...rows].sort((a, b) => (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1));
+function sortedSearchRows(rows, opts = {}) {
+  const focusRank = new Map((opts.focusGroupUrls || []).map((url, i) => [url, i]));
+  const rankFor = row => row.groupUrl && focusRank.has(row.groupUrl) ? focusRank.get(row.groupUrl) : Number.MAX_SAFE_INTEGER;
+  return [...rows].sort((a, b) => rankFor(a) - rankFor(b) || (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1));
 }
 
 function rotateRows(rows, cursor) {
@@ -162,18 +164,24 @@ function writeSearches(rows, opts) {
 function generateWatchBatch(config, opts) {
   const allRows = generateSearches(config);
   const limit = Number(opts.limit || allRows.length);
-  const sortedRows = sortedSearchRows(allRows);
+  const focusGroupUrls = opts.focusGroupUrls || [];
+  const focusGroupSet = new Set(focusGroupUrls);
+  const isFocused = row => row.groupUrl && focusGroupSet.has(row.groupUrl);
+  const sortedRows = sortedSearchRows(allRows, { focusGroupUrls });
+  const focusedRows = sortedRows.filter(isFocused);
+  const rotatedRows = sortedSearchRows(allRows.filter(row => !isFocused(row)));
   const statePath = outputPath(opts.state || DEFAULT_STATE_PATH);
   const state = opts.rotate ? readJsonIfExists(statePath, { seenHashes: [] }) : null;
   const cursor = state ? Number(state.watchCursor || 0) : 0;
-  const sourceRows = opts.rotate ? rotateRows(sortedRows, cursor) : sortedRows;
+  const sourceRows = opts.rotate ? focusedRows.concat(rotateRows(rotatedRows, cursor)) : sortedRows;
   const rows = sourceRows.slice(0, limit);
+  const selectedRotatedRows = rows.filter(row => !isFocused(row)).length;
   const capturePath = "monitoring/facebook-capture-snippet.js";
   const mdOut = opts.out || "monitoring/facebook-watch.md";
   const htmlOut = opts.html || null;
   const openOut = opts.script || "monitoring/facebook-open-watch.sh";
   const now = new Date().toISOString();
-  const nextCursor = sortedRows.length ? (cursor + rows.length) % sortedRows.length : 0;
+  const nextCursor = rotatedRows.length ? (cursor + selectedRotatedRows) % rotatedRows.length : 0;
 
   const md = [
     "# Facebook Watch Batch",
@@ -237,6 +245,7 @@ ${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeH
       watchUpdatedAt: now,
       watchCursor: nextCursor,
       watchTotalSearches: sortedRows.length,
+      watchRotatedSearches: rotatedRows.length,
       watchLimit: limit
     };
     fs.writeFileSync(statePath, JSON.stringify(nextState, null, 2) + "\n");
@@ -247,6 +256,7 @@ ${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeH
     searches: rows.length,
     totalSearches: sortedRows.length,
     groups: (config.facebook.groups || []).length,
+    focusedGroups: focusGroupUrls.length,
     markdown: mdOut,
     html: htmlOut,
     openScript: openOut,
@@ -256,7 +266,8 @@ ${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeH
       state: path.relative(ROOT, statePath),
       cursor,
       nextCursor,
-      totalSearches: sortedRows.length
+      totalSearches: sortedRows.length,
+      rotatedSearches: rotatedRows.length
     } : { enabled: false }
   };
   if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
@@ -611,6 +622,7 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
     seenHashes: (state.seenHashes || []).length,
     watchCursor: state.watchCursor || 0,
     watchTotalSearches: state.watchTotalSearches || watchRows.length,
+    watchRotatedSearches: state.watchRotatedSearches || null,
     watchLimit: state.watchLimit || null,
     watchUpdatedAt: state.watchUpdatedAt || null,
     groupCoverage: {
@@ -636,17 +648,20 @@ function runNext(opts) {
   const config = loadConfig();
   const out = opts.out || "monitoring/facebook-next.md";
   const rotate = !opts["no-rotate"];
+  const coverage = groupCaptureCoverage(config, opts);
+  const staleRows = coverage.groups.filter(group => group.status !== "fresh");
+  const focusRows = opts["no-focus-stale"] ? [] : staleRows;
   const watch = generateWatchBatch(config, {
     out: opts.watch || "monitoring/facebook-watch.md",
     html: opts.html || "monitoring/facebook-watch.html",
     script: opts.script || "monitoring/facebook-open-watch.sh",
     limit: opts.limit || 40,
     state: opts.state || DEFAULT_STATE_PATH,
+    focusGroupUrls: focusRows.map(group => group.url),
     rotate,
     quiet: true
   });
   const snapshot = monitorSnapshot(config, opts);
-  const coverage = groupCaptureCoverage(config, opts);
   const generatedAt = new Date().toISOString();
   const groupLines = config.facebook.groups.length
     ? config.facebook.groups.map(group => `- ${group.name} (${group.priority || "normal"}): ${group.url}`)
@@ -665,7 +680,6 @@ function runNext(opts) {
     publishApply: "node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash> --apply"
   };
   const counts = snapshot.candidateStatus;
-  const staleRows = coverage.groups.filter(group => group.status !== "fresh");
   const freshnessLines = !coverage.groups.length
     ? ["- No groups configured yet."]
     : staleRows.length
@@ -685,6 +699,7 @@ function runNext(opts) {
     `Configured private groups: ${snapshot.groups}`,
     `Watch searches this run: ${watch.searches} of ${watch.totalSearches}`,
     `Rotation: ${watch.rotation.enabled ? `cursor ${watch.rotation.cursor} -> ${watch.rotation.nextCursor}` : "off"}`,
+    `Focused stale/never groups: ${watch.focusedGroups}`,
     "",
     ...groupLines,
     "",
@@ -737,6 +752,7 @@ function runNext(opts) {
     searches: watch.searches,
     totalSearches: watch.totalSearches,
     rotation: watch.rotation,
+    focusedGroups: watch.focusedGroups,
     inboxFiles: snapshot.inboxFiles,
     candidates: snapshot.candidates,
     candidateStatus: snapshot.candidateStatus,
