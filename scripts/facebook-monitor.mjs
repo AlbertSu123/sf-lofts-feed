@@ -95,6 +95,7 @@ function usage() {
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
+  node scripts/facebook-monitor.mjs doctor [--downloads-dir ~/Downloads] [--state monitoring/facebook-monitor-state.json] [--candidates monitoring/facebook-candidates.json] [--inbox monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
   node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html] [--open] [--open-watch] [--open-review] [--open-discovery] [--no-downloads] [--no-groups] [--no-housing-only] [--no-discovery] [--all] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
@@ -895,6 +896,136 @@ function runStatus(opts = {}) {
   console.log(JSON.stringify(monitorSnapshot(loadConfig(opts), opts), null, 2));
 }
 
+function fileInfo(file) {
+  const resolved = outputPath(file);
+  if (!fs.existsSync(resolved)) {
+    return { file, path: resolved, exists: false, updatedAt: null, bytes: 0 };
+  }
+  const stat = fs.statSync(resolved);
+  return {
+    file,
+    path: resolved,
+    exists: true,
+    updatedAt: stat.mtime.toISOString(),
+    bytes: stat.size
+  };
+}
+
+function launchAgentStatus() {
+  const plist = path.join(process.env.HOME || ".", "Library/LaunchAgents/com.sf-lofts-feed.facebook-monitor.plist");
+  const installed = fs.existsSync(plist);
+  return {
+    installed,
+    plist,
+    command: installed ? `launchctl unload ${shellQuote(plist)}` : "scripts/install-facebook-monitor-agent.sh"
+  };
+}
+
+function captureDownloadStatus(opts = {}) {
+  const { downloadsDir, files } = downloadCaptureFiles(opts);
+  const statePath = outputPath(opts.state || DEFAULT_STATE_PATH);
+  const state = readJsonIfExists(statePath, { importedDownloadHashes: [] });
+  const importedHashes = new Set(state.importedDownloadHashes || []);
+  const rows = files.map(file => {
+    const raw = fs.readFileSync(file, "utf8");
+    const hash = crypto.createHash("sha1").update(raw).digest("hex");
+    const stat = fs.statSync(file);
+    return {
+      file: path.relative(downloadsDir, file),
+      path: file,
+      hash,
+      imported: importedHashes.has(hash),
+      mtime: stat.mtime.toISOString(),
+      bytes: stat.size
+    };
+  });
+  return {
+    downloadsDir,
+    total: rows.length,
+    imported: rows.filter(row => row.imported).length,
+    unimported: rows.filter(row => !row.imported).length,
+    state: path.relative(ROOT, statePath),
+    files: rows
+  };
+}
+
+function generatedMonitorFiles(opts = {}) {
+  return [
+    opts.bookmarklet || "monitoring/facebook-capture-bookmarklet.html",
+    opts.discovery || "monitoring/facebook-discovery.md",
+    opts["discovery-html"] || "monitoring/facebook-discovery.html",
+    opts["discovery-script"] || "monitoring/facebook-open-discovery.sh",
+    opts.next || "monitoring/facebook-next.md",
+    opts.watch || "monitoring/facebook-watch.md",
+    opts.html || "monitoring/facebook-watch.html",
+    opts.script || "monitoring/facebook-open-watch.sh",
+    opts.review || "monitoring/facebook-review.html",
+    opts.candidates || DEFAULT_CANDIDATES_PATH
+  ].map(fileInfo);
+}
+
+function monitorNextActions(snapshot, downloads, generatedFiles, launchAgent, opts = {}) {
+  const candidatesFile = opts.candidates || opts.out || DEFAULT_CANDIDATES_PATH;
+  const actions = [];
+  const missingBookmarklet = generatedFiles.find(file => /facebook-capture-bookmarklet\.html$/.test(file.file) && !file.exists);
+  if (missingBookmarklet) {
+    actions.push("Generate/install the bookmarklet: node scripts/facebook-monitor.mjs bookmarklet --out monitoring/facebook-capture-bookmarklet.html");
+  }
+  if (!snapshot.groups) {
+    actions.push("Discover housing groups: node scripts/facebook-monitor.mjs discover --open");
+  }
+  if (downloads.unimported) {
+    actions.push("Import pending Facebook captures: node scripts/facebook-monitor.mjs run --open-watch --open-review");
+  } else if (snapshot.groups && !snapshot.inboxFiles) {
+    actions.push("Capture listings from configured groups: node scripts/facebook-monitor.mjs run --open-watch");
+  }
+  if (snapshot.inboxFiles && !snapshot.candidates) {
+    actions.push("Score imported captures: node scripts/facebook-monitor.mjs scan --open");
+  }
+  const reviewable = (snapshot.candidateStatus.pass || 0) + (snapshot.candidateStatus.verify || 0);
+  if (reviewable) {
+    actions.push(`Review pass/verify candidates, then publish selected handles with node scripts/facebook-monitor.mjs publish ${candidatesFile} --select <handle-or-hash> --apply`);
+  }
+  if (!launchAgent.installed) {
+    actions.push("Install the 6-hour reminder loop: scripts/install-facebook-monitor-agent.sh");
+  }
+  if (!actions.length) {
+    actions.push("Monitor is ready. Continue the loop with node scripts/facebook-monitor.mjs run --open-watch --open-review");
+  }
+  return actions;
+}
+
+function runDoctor(opts = {}) {
+  const config = loadConfig(opts);
+  const snapshot = monitorSnapshot(config, opts);
+  const downloads = captureDownloadStatus(opts);
+  const generatedFiles = generatedMonitorFiles(opts);
+  const launchAgent = launchAgentStatus();
+  const readiness = {
+    groupsConfigured: snapshot.groups > 0,
+    listingCapturesImported: snapshot.inboxFiles > 0,
+    candidatesScored: snapshot.candidates > 0,
+    hasReviewableCandidates: (snapshot.candidateStatus.pass || 0) + (snapshot.candidateStatus.verify || 0) > 0,
+    unimportedDownloads: downloads.unimported,
+    reminderInstalled: launchAgent.installed
+  };
+  const nextActions = monitorNextActions(snapshot, downloads, generatedFiles, launchAgent, opts);
+  console.log(JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    criteria: {
+      maxPricePerBedroom: config.criteria.maxPricePerBedroom,
+      minBedrooms: config.criteria.minBedrooms,
+      allowSharedRooms: config.criteria.allowSharedRooms
+    },
+    readiness,
+    status: snapshot,
+    downloads,
+    generatedFiles,
+    launchAgent,
+    nextActions
+  }, null, 2));
+}
+
 function runCoverage(opts = {}) {
   console.log(JSON.stringify(groupCaptureCoverage(loadConfig(opts), opts), null, 2));
 }
@@ -1638,6 +1769,8 @@ if (!cmd || cmd === "help") {
   }
 } else if (cmd === "status") {
   runStatus(opts);
+} else if (cmd === "doctor") {
+  runDoctor(opts);
 } else if (cmd === "coverage") {
   runCoverage(opts);
 } else if (cmd === "run") {

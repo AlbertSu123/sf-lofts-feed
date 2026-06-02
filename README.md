@@ -29,6 +29,12 @@ node scripts/facebook-monitor.mjs status
 
 `status` includes `setupGaps`; if it reports no groups, no listing captures, or no candidates, the monitor still needs a logged-in Facebook capture before it can source real leads.
 
+For a fuller readiness check, including pending capture downloads, generated local pages, and whether the 6-hour reminder is installed:
+
+```sh
+node scripts/facebook-monitor.mjs doctor
+```
+
 Check which configured groups have not produced a recent capture:
 
 ```sh
