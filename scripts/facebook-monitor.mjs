@@ -282,6 +282,39 @@ function rotateRows(rows, cursor) {
   return rows.slice(offset).concat(rows.slice(0, offset));
 }
 
+function interleaveRowsByKey(rows, keyFn, cursor = 0) {
+  const buckets = [];
+  const byKey = new Map();
+  for (const row of rows) {
+    const key = keyFn(row) || "__default";
+    if (!byKey.has(key)) {
+      const bucket = { key, rows: [] };
+      byKey.set(key, bucket);
+      buckets.push(bucket);
+    }
+    byKey.get(key).rows.push(row);
+  }
+  for (const bucket of buckets) {
+    bucket.rows = rotateRows(bucket.rows, cursor);
+    bucket.index = 0;
+  }
+  const out = [];
+  let added = true;
+  while (added) {
+    added = false;
+    for (const bucket of buckets) {
+      if (bucket.index >= bucket.rows.length) continue;
+      out.push(bucket.rows[bucket.index++]);
+      added = true;
+    }
+  }
+  return {
+    rows: out,
+    buckets: buckets.length,
+    maxBucketRows: buckets.reduce((max, bucket) => Math.max(max, bucket.rows.length), 0)
+  };
+}
+
 function writeSearches(rows, opts) {
   const format = opts.format || (opts.out && opts.out.endsWith(".json") ? "json" : "markdown");
   let body;
@@ -314,8 +347,14 @@ function generateWatchBatch(config, opts) {
   const statePath = outputPath(opts.state || DEFAULT_STATE_PATH);
   const state = opts.rotate ? readJsonIfExists(statePath, { seenHashes: [] }) : null;
   const cursor = state ? Number(state.watchCursor || 0) : 0;
-  const sourceRows = opts.rotate ? focusedRows.concat(rotateRows(rotatedRows, cursor)) : sortedRows;
+  const focusCursor = state ? Number(state.watchFocusCursor || 0) : 0;
+  const focusedPlan = opts.rotate
+    ? interleaveRowsByKey(focusedRows, row => row.groupUrl, focusCursor)
+    : { rows: focusedRows, buckets: focusGroupUrls.length, maxBucketRows: focusedRows.length };
+  const sourceRows = opts.rotate ? focusedPlan.rows.concat(rotateRows(rotatedRows, cursor)) : sortedRows;
   const rows = sourceRows.slice(0, limit);
+  const selectedFocusedRows = rows.filter(isFocused).length;
+  const selectedFocusedGroups = new Set(rows.filter(isFocused).map(row => row.groupUrl)).size;
   const selectedRotatedRows = rows.filter(row => !isFocused(row)).length;
   const capturePath = "monitoring/facebook-capture-snippet.js";
   const mdOut = opts.out || "monitoring/facebook-watch.md";
@@ -323,6 +362,8 @@ function generateWatchBatch(config, opts) {
   const openOut = opts.script || "monitoring/facebook-open-watch.sh";
   const now = new Date().toISOString();
   const nextCursor = rotatedRows.length ? (cursor + selectedRotatedRows) % rotatedRows.length : 0;
+  const focusAdvance = selectedFocusedGroups ? Math.ceil(selectedFocusedRows / selectedFocusedGroups) : 0;
+  const nextFocusCursor = focusedPlan.maxBucketRows ? (focusCursor + focusAdvance) % focusedPlan.maxBucketRows : 0;
 
   const md = [
     "# Facebook Watch Batch",
@@ -386,7 +427,10 @@ ${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeH
       ...state,
       watchUpdatedAt: now,
       watchCursor: nextCursor,
+      watchFocusCursor: nextFocusCursor,
       watchTotalSearches: sortedRows.length,
+      watchFocusedSearches: focusedRows.length,
+      watchFocusedGroups: focusedPlan.buckets,
       watchRotatedSearches: rotatedRows.length,
       watchLimit: limit
     };
@@ -408,7 +452,11 @@ ${rows.map(r => `<tr class="${escapeHtml(r.priority || "normal")}"><td>${escapeH
       state: path.relative(ROOT, statePath),
       cursor,
       nextCursor,
+      focusCursor,
+      nextFocusCursor,
       totalSearches: sortedRows.length,
+      focusedSearches: focusedRows.length,
+      focusedGroups: focusedPlan.buckets,
       rotatedSearches: rotatedRows.length
     } : { enabled: false }
   };
@@ -901,7 +949,10 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
     candidateStatus: countStatuses(candidates),
     seenHashes: (state.seenHashes || []).length,
     watchCursor: state.watchCursor || 0,
+    watchFocusCursor: state.watchFocusCursor || 0,
     watchTotalSearches: state.watchTotalSearches || watchRows.length,
+    watchFocusedSearches: state.watchFocusedSearches || null,
+    watchFocusedGroups: state.watchFocusedGroups || null,
     watchRotatedSearches: state.watchRotatedSearches || null,
     watchLimit: state.watchLimit || null,
     watchUpdatedAt: state.watchUpdatedAt || null,
@@ -1216,6 +1267,7 @@ function runNext(opts) {
     `Configured private groups: ${snapshot.groups}`,
     `Watch searches this run: ${watch.searches} of ${watch.totalSearches}`,
     `Rotation: ${watch.rotation.enabled ? `cursor ${watch.rotation.cursor} -> ${watch.rotation.nextCursor}` : "off"}`,
+    `Focused term rotation: ${watch.rotation.enabled ? `cursor ${watch.rotation.focusCursor} -> ${watch.rotation.nextFocusCursor}` : "off"}`,
     `Focused stale/never groups: ${watch.focusedGroups}`,
     "",
     ...groupLines,

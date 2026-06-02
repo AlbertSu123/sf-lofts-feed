@@ -65,7 +65,19 @@
       "warehouse loft San Francisco rent",
       "artist loft San Francisco rent",
       "lease takeover San Francisco 2 bed",
-      "sublease San Francisco 2 bedroom"
+      "sublease San Francisco 2 bedroom",
+      "SoMa live work loft 2 bedroom",
+      "Mullen Building loft rent",
+      "Hales Warehouse loft rent",
+      "Mission Bay 2 bed office rent",
+      "San Francisco 2 bed 2 bath lease takeover",
+      "San Francisco 3 bedroom rent office",
+      "San Francisco private patio loft rent",
+      "San Francisco warehouse conversion rent",
+      "SF 2 bedroom den lease takeover",
+      "Potrero Mission loft sublet",
+      "Dogpatch 2BR office apartment",
+      "live work space San Francisco rent"
     ],
     "groupUrls": [],
     "localGroupsFile": "monitoring/facebook-groups.local.json"

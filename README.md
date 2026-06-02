@@ -70,7 +70,7 @@ Run the full monitoring loop. This imports any new `fb-housing-capture-*.json` f
 node scripts/facebook-monitor.mjs run --limit 40 --open-watch --open-review
 ```
 
-`run` dedupes downloaded captures by hash in `monitoring/facebook-monitor-state.json`. It does not mark scored posts as reviewed; use `scan --update-state` after you have looked at the review page. The generated watch batch advances a local rotation cursor so large group lists are covered across multiple runs instead of showing the same first links every time. It also prioritizes stale or never-captured groups first.
+`run` dedupes downloaded captures by hash in `monitoring/facebook-monitor-state.json`. It does not mark scored posts as reviewed; use `scan --update-state` after you have looked at the review page. The generated watch batch advances local rotation cursors so large group lists are covered across multiple runs instead of showing the same first links every time. It also prioritizes stale or never-captured groups first and round-robins those groups so later groups do not get starved by a larger search-term list.
 
 Create only the next-run briefing and refreshed watch page:
 
