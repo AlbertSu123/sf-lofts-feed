@@ -122,6 +122,8 @@ pbpaste | node scripts/facebook-monitor.mjs inbox - --name <group-or-search-name
 node scripts/facebook-monitor.mjs scan --open
 ```
 
+This also refreshes `monitoring/facebook-digest.md`, a triage summary that groups pass/verify leads into ready-to-message, missing-price, missing-bedroom, shared-room, and skip queues.
+
 8. After reviewing the scored output, mark scanned posts as seen:
 
 ```sh
@@ -131,7 +133,7 @@ node scripts/facebook-monitor.mjs scan --update-state
 9. To manually run scoring with every option:
 
 ```sh
-node scripts/facebook-monitor.mjs score monitoring/facebook-inbox/*.json --out monitoring/facebook-candidates.json --snippets monitoring/facebook-candidates.generated.js --review monitoring/facebook-review.html --state monitoring/facebook-monitor-state.json --new-only
+node scripts/facebook-monitor.mjs score monitoring/facebook-inbox/*.json --out monitoring/facebook-candidates.json --snippets monitoring/facebook-candidates.generated.js --review monitoring/facebook-review.html --digest monitoring/facebook-digest.md --state monitoring/facebook-monitor-state.json --new-only
 open monitoring/facebook-review.html
 ```
 
@@ -141,7 +143,7 @@ open monitoring/facebook-review.html
 node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash>
 ```
 
-The review page also lets you select multiple pass/verify cards and copy a batch publish command.
+The review page links to the digest and also lets you select multiple pass/verify cards and copy a batch publish command.
 
 11. After verifying availability and poster identity, apply selected cards to the app:
 
@@ -163,7 +165,7 @@ To remove it:
 scripts/uninstall-facebook-monitor-agent.sh
 ```
 
-The agent imports new capture downloads, refreshes `monitoring/facebook-review.html`, creates `monitoring/facebook-next.md`, refreshes the local watch batch, opens the watch page, and shows a macOS notification; it does not scrape Facebook in the background.
+The agent imports new capture downloads, refreshes `monitoring/facebook-review.html` and `monitoring/facebook-digest.md`, creates `monitoring/facebook-next.md`, refreshes the local watch batch, opens the watch page, and shows a macOS notification; it does not scrape Facebook in the background.
 
 You can still run a single scan prompt manually:
 

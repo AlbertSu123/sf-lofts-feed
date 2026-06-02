@@ -9,6 +9,7 @@ import vm from "node:vm";
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const CONFIG_PATH = path.join(ROOT, "monitoring/facebook-monitor.config.json");
 const DEFAULT_CANDIDATES_PATH = "monitoring/facebook-candidates.json";
+const DEFAULT_DIGEST_PATH = "monitoring/facebook-digest.md";
 const DEFAULT_STATE_PATH = "monitoring/facebook-monitor-state.json";
 const DEFAULT_GROUP_SEEDS_PATH = "monitoring/facebook-group-seeds.json";
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
@@ -101,12 +102,12 @@ function usage() {
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs doctor [--downloads-dir ~/Downloads] [--state monitoring/facebook-monitor-state.json] [--candidates monitoring/facebook-candidates.json] [--inbox monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
-  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html] [--open] [--open-watch] [--open-links] [--open-review] [--open-discovery] [--no-downloads] [--no-groups] [--no-housing-only] [--no-discovery] [--all] [--state monitoring/facebook-monitor-state.json]
+  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--digest monitoring/facebook-digest.md] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html] [--open] [--open-watch] [--open-links] [--open-review] [--open-discovery] [--no-downloads] [--no-groups] [--no-housing-only] [--no-discovery] [--all] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--open-links] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs downloads [--downloads-dir ~/Downloads] [--out-dir monitoring/facebook-inbox] [--groups] [--housing-only] [--groups-out monitoring/facebook-groups.local.json] [--state monitoring/facebook-monitor-state.json] [--all]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
-  node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
-  node scripts/facebook-monitor.mjs scan [--inbox monitoring/facebook-inbox] [--open] [--all] [--update-state]
+  node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--digest monitoring/facebook-digest.md] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
+  node scripts/facebook-monitor.mjs scan [--inbox monitoring/facebook-inbox] [--digest monitoring/facebook-digest.md] [--open] [--all] [--update-state]
   node scripts/facebook-monitor.mjs publish <candidates.json> --select <handle-or-hash,...> [--apply] [--index index.html]
 
 Raw captures and generated candidates are ignored by git. Review and verify before publishing any private-group lead.`);
@@ -957,6 +958,7 @@ function runScan(opts) {
     out: opts.out || DEFAULT_CANDIDATES_PATH,
     snippets: opts.snippets || "monitoring/facebook-candidates.generated.js",
     review: opts.review || "monitoring/facebook-review.html",
+    digest: opts.digest || DEFAULT_DIGEST_PATH,
     state: opts.state || "monitoring/facebook-monitor-state.json"
   };
   if (!opts.all) scoreOpts["new-only"] = true;
@@ -1094,6 +1096,7 @@ function generatedMonitorFiles(opts = {}) {
     opts.html || "monitoring/facebook-watch.html",
     opts.script || "monitoring/facebook-open-watch.sh",
     opts.review || "monitoring/facebook-review.html",
+    opts.digest || DEFAULT_DIGEST_PATH,
     opts.candidates || DEFAULT_CANDIDATES_PATH
   ].map(fileInfo);
 }
@@ -1259,6 +1262,7 @@ function runNext(opts) {
   const out = opts.out || "monitoring/facebook-next.md";
   const candidatesFile = opts.candidates || DEFAULT_CANDIDATES_PATH;
   const reviewFile = opts.review || "monitoring/facebook-review.html";
+  const digestFile = opts.digest || DEFAULT_DIGEST_PATH;
   const rotate = !opts["no-rotate"];
   const coverage = groupCaptureCoverage(config, opts);
   const staleRows = coverage.groups.filter(group => group.status !== "fresh");
@@ -1293,6 +1297,7 @@ function runNext(opts) {
     captureInbox: "pbpaste | node scripts/facebook-monitor.mjs inbox - --name <group-or-search-name>",
     scan: "node scripts/facebook-monitor.mjs scan --open",
     markSeen: "node scripts/facebook-monitor.mjs scan --update-state",
+    digest: `open ${shellQuote(outputPath(digestFile))}`,
     publishPreview: `node scripts/facebook-monitor.mjs publish ${candidatesFile} --select <handle-or-hash>`,
     publishApply: `node scripts/facebook-monitor.mjs publish ${candidatesFile} --select <handle-or-hash> --apply`
   };
@@ -1357,6 +1362,7 @@ function runNext(opts) {
     `Watch markdown: ${relativeOut(watch.markdown)}`,
     `Open script: ${relativeOut(watch.openScript)}`,
     `Review page: ${relativeOut(reviewFile)}`,
+    `Digest: ${relativeOut(digestFile)}`,
     `Candidates file: ${relativeOut(candidatesFile)}`,
     "",
     "## Next Commands",
@@ -1369,6 +1375,7 @@ function runNext(opts) {
     `open ${shellQuote(outputPath(watch.html || "monitoring/facebook-watch.html"))}`,
     commands.captureInbox,
     commands.scan,
+    commands.digest,
     commands.markSeen,
     commands.publishPreview,
     commands.publishApply,
@@ -1382,6 +1389,7 @@ function runNext(opts) {
     out: relativeOut(out),
     watchHtml: relativeOut(watch.html || "monitoring/facebook-watch.html"),
     openScript: relativeOut(watch.openScript),
+    digest: relativeOut(digestFile),
     groups: snapshot.groups,
     searches: watch.searches,
     totalSearches: watch.totalSearches,
@@ -1411,6 +1419,7 @@ function runMonitorLoop(opts = {}) {
   const candidatesFile = opts.out || opts.candidates || DEFAULT_CANDIDATES_PATH;
   const snippetsFile = opts.snippets || "monitoring/facebook-candidates.generated.js";
   const review = opts.review || "monitoring/facebook-review.html";
+  const digest = opts.digest || DEFAULT_DIGEST_PATH;
   const watchHtml = opts.html || "monitoring/facebook-watch.html";
   const discoveryMd = opts.discovery || "monitoring/facebook-discovery.md";
   const discoveryHtml = opts["discovery-html"] || "monitoring/facebook-discovery.html";
@@ -1448,6 +1457,7 @@ function runMonitorLoop(opts = {}) {
     out: candidatesFile,
     snippets: snippetsFile,
     review,
+    digest,
     state,
     open: false,
     quiet: true
@@ -1500,6 +1510,7 @@ function runMonitorLoop(opts = {}) {
       run: "node scripts/facebook-monitor.mjs run --open-watch --open-review",
       discover: "node scripts/facebook-monitor.mjs discover --open",
       review: `open ${shellQuote(outputPath(review))}`,
+      digest: `open ${shellQuote(outputPath(digest))}`,
       watch: `open ${shellQuote(outputPath(watchHtml))}`,
       discovery: discovery ? `open ${shellQuote(outputPath(discovery.html))}` : null,
       markSeen: "node scripts/facebook-monitor.mjs scan --update-state",
@@ -1718,6 +1729,135 @@ function ppbLabel(n) {
   return n ? `$${n.toLocaleString()}/bd` : "verify";
 }
 
+function candidateShortHash(c) {
+  return String(c.textHash || "").slice(0, 10);
+}
+
+function isPublishable(c) {
+  return c.status === "pass" || c.status === "verify";
+}
+
+function isKnownOverBudget(c, config) {
+  return c.pricePerBedroom !== null &&
+    c.pricePerBedroom !== undefined &&
+    c.pricePerBedroom > config.criteria.maxPricePerBedroom;
+}
+
+function primaryTriageBucket(c, config) {
+  if (c.status === "duplicate") return "duplicates";
+  if (isKnownOverBudget(c, config)) return "overBudget";
+  if (c.status === "reject") return "rejected";
+  if (!isPublishable(c)) return "manualReview";
+  if (!c.price || c.pricePerBedroom === null || c.pricePerBedroom === undefined) return "needsPrice";
+  if (!c.budgetBedrooms) return "needsBedrooms";
+  if (!c.url) return "needsSource";
+  if (c.shared) return "sharedRooms";
+  if (c.status === "pass") return "ready";
+  return "worthVerifying";
+}
+
+function triageCandidates(candidates, config) {
+  const buckets = {
+    ready: [],
+    worthVerifying: [],
+    needsPrice: [],
+    needsBedrooms: [],
+    needsSource: [],
+    sharedRooms: [],
+    manualReview: [],
+    overBudget: [],
+    rejected: [],
+    duplicates: []
+  };
+  for (const candidate of candidates) {
+    buckets[primaryTriageBucket(candidate, config)].push(candidate);
+  }
+  return buckets;
+}
+
+function digestTable(candidates, config, limit = 12) {
+  if (!candidates.length) return "_None right now._";
+  const rows = candidates.slice(0, limit).map(c => [
+    c.status,
+    c.score,
+    priceLabel(c.price),
+    ppbLabel(c.pricePerBedroom),
+    c.bedrooms ?? "?",
+    c.location,
+    c.signals.slice(0, 4).join(", ") || "none",
+    candidateShortHash(c),
+    c.url || c.pageUrl || ""
+  ]);
+  return [
+    "| Status | Score | Price | $/bd | Beds | Location | Signals | Hash | Link |",
+    "| --- | ---: | --- | --- | ---: | --- | --- | --- | --- |",
+    ...rows.map(row => {
+      const link = row[8] ? `[open](${row[8]})` : "verify";
+      return `| ${escapeMd(row[0])} | ${row[1]} | ${escapeMd(row[2])} | ${escapeMd(row[3])} | ${escapeMd(row[4])} | ${escapeMd(row[5])} | ${escapeMd(row[6])} | \`${escapeMd(row[7])}\` | ${link} |`;
+    })
+  ].join("\n");
+}
+
+function generateDigestMarkdown(candidates, opts) {
+  const config = loadConfig(opts);
+  const out = opts.digest || DEFAULT_DIGEST_PATH;
+  const generatedAt = new Date().toISOString();
+  const candidateFile = opts.out || DEFAULT_CANDIDATES_PATH;
+  const buckets = triageCandidates(candidates, config);
+  const publishable = candidates.filter(isPublishable);
+  const knownFit = publishable.filter(c => !isKnownOverBudget(c, config));
+  const readyHashes = buckets.ready.map(candidateShortHash);
+  const verifyHashes = buckets.worthVerifying.concat(buckets.needsPrice, buckets.needsBedrooms, buckets.needsSource).map(candidateShortHash);
+  const lines = [
+    "# Facebook Housing Triage Digest",
+    "",
+    `Generated: ${generatedAt}`,
+    `Criteria: at least ${config.criteria.minBedrooms} bedrooms, known price at or below $${config.criteria.maxPricePerBedroom.toLocaleString()}/bedroom, with loft/workspace signals favored.`,
+    "",
+    "## Snapshot",
+    "",
+    `- Total scored candidates: ${candidates.length}`,
+    `- Pass/verify candidates: ${publishable.length}`,
+    `- Known or potentially in-budget pass/verify candidates: ${knownFit.length}`,
+    `- Ready to message/review: ${buckets.ready.length}`,
+    `- Worth verifying after quick source check: ${buckets.worthVerifying.length}`,
+    `- Missing price: ${buckets.needsPrice.length}`,
+    `- Missing bedroom count: ${buckets.needsBedrooms.length}`,
+    `- Missing direct lead URL: ${buckets.needsSource.length}`,
+    `- Shared-room leads: ${buckets.sharedRooms.length}`,
+    `- Known over-budget/rejected/duplicate: ${buckets.overBudget.length + buckets.rejected.length + buckets.duplicates.length}`,
+    "",
+    "## Best Leads",
+    "",
+    digestTable(buckets.ready.concat(buckets.worthVerifying), config, 15),
+    "",
+    "## Needs Critical Info",
+    "",
+    digestTable(buckets.needsPrice.concat(buckets.needsBedrooms, buckets.needsSource), config, 15),
+    "",
+    "## Shared-Room Leads",
+    "",
+    digestTable(buckets.sharedRooms, config, 10),
+    "",
+    "## Skip Queue",
+    "",
+    digestTable(buckets.overBudget.concat(buckets.rejected, buckets.duplicates), config, 15),
+    "",
+    "## Next Actions",
+    "",
+    readyHashes.length
+      ? `- Message or verify ready leads, then preview them with \`node scripts/facebook-monitor.mjs publish ${candidateFile} --select ${readyHashes.join(",")}\`.`
+      : "- No ready leads yet; keep capturing stale groups from the watch checklist.",
+    verifyHashes.length
+      ? `- For missing-info leads, confirm rent, bedroom count, and direct post URL before publishing: \`${verifyHashes.slice(0, 12).join(",")}\`.`
+      : "- No missing-info pass/verify leads right now.",
+    "- After reviewing the digest and review page, run `node scripts/facebook-monitor.mjs scan --update-state` so old captures do not keep resurfacing.",
+    "- `publish --apply` still blocks known over-budget cards and audits the feed before leaving changes in `index.html`."
+  ];
+  fs.writeFileSync(outputPath(out), lines.join("\n") + "\n");
+  return out;
+}
+
 function specObjects(c) {
   const specs = [];
   if (c.bedrooms !== null) specs.push({ t: `${c.shared ? "Shared " : ""}${c.bedrooms} bd`, hot: c.bedrooms >= 3 });
@@ -1774,9 +1914,12 @@ function generateReviewHtml(candidates, opts) {
   const out = opts.review || "monitoring/facebook-review.html";
   const generatedAt = new Date().toISOString();
   const candidateFile = opts.out || DEFAULT_CANDIDATES_PATH;
+  const digestHref = opts.digest
+    ? path.relative(path.dirname(outputPath(out)), outputPath(opts.digest)).replace(/\\/g, "/")
+    : null;
   const rows = candidates.map(c => {
-    const shortHash = c.textHash.slice(0, 10);
-    const publishable = c.status === "pass" || c.status === "verify";
+    const shortHash = candidateShortHash(c);
+    const publishable = isPublishable(c);
     const publishCommand = `node scripts/facebook-monitor.mjs publish ${candidateFile} --select ${shortHash}`;
     return `<article class="card ${escapeHtml(c.status)}">
   <header>
@@ -1807,7 +1950,7 @@ function generateReviewHtml(candidates, opts) {
 body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:24px;color:#111;background:#f7f7f7}
 h1{margin:0 0 4px}.meta{color:#555;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
 .toolbar{position:sticky;top:0;z-index:2;background:#ffffffe8;border:1px solid #ddd;border-radius:8px;padding:10px;margin:0 0 16px;box-shadow:0 2px 8px #0001;display:grid;grid-template-columns:auto auto auto 1fr auto;gap:8px;align-items:center;backdrop-filter:blur(8px)}
-.toolbar button{border:1px solid #bbb;background:#fff;border-radius:6px;padding:7px 10px;cursor:pointer}.toolbar label{color:#555}
+.toolbar button{border:1px solid #bbb;background:#fff;border-radius:6px;padding:7px 10px;cursor:pointer}.toolbar label{color:#555}.toolbar a.digest{color:#06c;white-space:nowrap}
 .card{background:white;border:1px solid #ddd;border-left:7px solid #999;border-radius:8px;padding:14px;box-shadow:0 1px 3px #0001}
 .pass{border-left-color:#179b55}.verify{border-left-color:#c47f17}.reject{opacity:.72;border-left-color:#cc3333}.duplicate{opacity:.65;border-left-color:#777}
 header{display:flex;flex-wrap:wrap;gap:8px;color:#555}.pick{color:#111;font-weight:600}header strong{color:#111}h2{font-size:17px;margin:10px 0 8px}p{line-height:1.45}dl{display:grid;grid-template-columns:90px 1fr;gap:5px;margin:12px 0}dt{color:#666}dd{margin:0}code,input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}input{width:100%;padding:7px;border:1px solid #ccc;border-radius:5px}.actions{display:flex;gap:10px}.actions a{color:#06c}
@@ -1822,6 +1965,7 @@ header{display:flex;flex-wrap:wrap;gap:8px;color:#555}.pick{color:#111;font-weig
   <label>Batch publish command</label>
   <input id="batchCommand" readonly value="">
   <button type="button" id="copyBatch">Copy command</button>
+  ${digestHref ? `<a class="digest" href="${escapeHtml(digestHref)}">Open digest</a>` : ""}
 </section>
 <main class="grid">
 ${rows || "<p>No candidates yet. Open the watch batch while logged into Facebook, click the Capture FB Housing bookmarklet on promising pages, then rerun <code>node scripts/facebook-monitor.mjs run --open-review</code>.</p>"}
@@ -1913,6 +2057,7 @@ function runScore(files, opts) {
     fs.writeFileSync(outputPath(opts.snippets), body);
   }
 
+  const digest = opts.digest ? generateDigestMarkdown(candidates, opts) : null;
   const review = opts.review ? generateReviewHtml(candidates, opts) : null;
 
   const top = candidates.slice(0, 20).map(c => ({
@@ -1935,6 +2080,7 @@ function runScore(files, opts) {
     duplicate: candidates.filter(c => c.status === "duplicate").length,
     out: opts.out || null,
     snippets: opts.snippets || null,
+    digest,
     review,
     state: opts.state || null,
     stateUpdated: Boolean(opts["update-state"] && statePath),
