@@ -168,6 +168,38 @@ const APTS = [{
   ]
 },
 {
+  rank:"#2 of 100 · BEST TRUE LOFT",
+  handle:"588.vanness.loft", initials:"SV", location:"588 S Van Ness Ave #6 · Inner Mission", verified:true,
+  checked:"6/2",
+  price:"$5,100/mo",
+  specs:[{t:"2 bd",hot:false},{t:"2.5 ba",hot:true},{t:"1,400 sqft",hot:true},{t:"3-level loft",hot:true},{t:"Avail NOW",hot:true}],
+  caption:"Actual 3-level Inner Mission loft with a skylit living room, private balcony, two gas fireplaces, in-unit laundry + garage parking. The one from the Facebook shortlist now has a public rental page.",
+  features:"✔︎ 1,400 sqft across a split-level / 3-level layout\n✔︎ 2.5 baths, skylight, balcony + two fireplaces\n✔︎ In-unit W/D, attached garage parking + storage\n✔︎ 4-minute walk to 16th St Mission BART",
+  tags:"#innermission #trueLoft #2bedroom #liveworkenergy #sflofts",
+  likes:"3,118",
+  photos:[
+    "https://ssl.cdn-redfin.com/photo/9/bigphoto/738/401738_4.jpg",
+    "__MAP__",
+    "https://ssl.cdn-redfin.com/photo/9/mbphotov3/738/genMid.401738_4_4.jpg",
+    "https://ssl.cdn-redfin.com/photo/9/mbphotov3/738/genMid.401738_1_4.jpg",
+    "https://ssl.cdn-redfin.com/photo/9/mbphotov3/738/genMid.401738_2_4.jpg",
+    "https://ssl.cdn-redfin.com/photo/9/mbphotov3/738/genMid.401738_7_4.jpg"
+  ],
+  mapq:"588 S Van Ness Ave Apt 6, San Francisco, CA 94110",
+  link:"https://www.zillow.com/homedetails/588-S-Van-Ness-Ave-APT-6-San-Francisco-CA-94110/59700388_zpid/",
+  linktext:"View on Zillow",
+  source:"Zillow rental · Redfin photo/layout archive · Facebook shortlist lead",
+  comments:[
+    {u:"loft.hunter",i:"LH",c:"this is the first one that actually reads TRUE loft + 2 real bedrooms. skylight + 3 levels is the move",l:"264",t:"1h"},
+    {u:"mission.ctrl",i:"MC",c:"4 min to 16th St BART and Rainbow Grocery nearby = practical city life, not just pretty photos",l:"138",t:"3h"},
+    {u:"bathmath",i:"BM",c:"2.5 baths for a 2BR is sneaky huge. guests get a powder room, roommates stay sane",l:"119",t:"5h"},
+    {u:"parking.pilled",i:"PP",c:"garage parking + storage in Inner Mission is real money. don't compare it to no-parking units",l:"172",t:"8h"},
+    {u:"pet.check",i:"PC",c:"Zillow says no pets and a $500 building move-in deposit. read the fees before falling in love",l:"96",t:"11h"},
+    {u:"soundcheck.sf",i:"SS",c:"tour during commute hours. S Van Ness can be loud even when the interior looks calm",l:"84",t:"1d"},
+    {u:"deal.or.no",i:"DN",c:"$5,100 for 1,400 sqft = $3.64/sqft. pricey monthly, but the space math is solid for SF",l:"151",t:"1d"}
+  ]
+},
+{
   rank:"#2 of 100 · CHEAPEST 2BR/2BA",
   handle:"missionbay.2br", initials:"MB", location:"Mission Bay · San Francisco", verified:true,
   price:"$3,465/mo",
@@ -481,7 +513,7 @@ function postHTML(apt, idx){
         <div style="margin-top:8px">${feats}</div>
         <div class="tags" style="margin-top:8px">${apt.tags}</div>
         <a class="listing" href="${apt.link}" target="_blank" rel="noopener">🔗 ${apt.linktext}</a>
-        <div class="src" style="${apt.vstat==='unconf'?'color:#c47f17;font-weight:600':'color:#0a8a3f;font-weight:600'}">${apt.vstat==='unconf'?'⚠ Availability unconfirmed — reconfirm before contacting':'✓ Availability checked 6/1'}</div>
+        <div class="src" style="${apt.vstat==='unconf'?'color:#c47f17;font-weight:600':'color:#0a8a3f;font-weight:600'}">${apt.vstat==='unconf'?'⚠ Availability unconfirmed — reconfirm before contacting':`✓ Availability checked ${apt.checked||'6/1'}`}</div>
         <div class="src">${apt.source}</div>
       </div>
       <div class="cmh" data-cmtoggle>View all ${apt.comments.length} comments</div>
