@@ -21,27 +21,44 @@ open monitoring/facebook-capture-bookmarklet.html
 ```
 
 4. Open `monitoring/facebook-watch.html`, then work through the links while logged into Facebook. Click the `Capture FB Housing` bookmarklet on each results page or group search page.
-5. Save the copied JSON into `monitoring/facebook-inbox/YYYY-MM-DD-group-name.json`.
-6. Score and dedupe the captures:
+5. Save the copied JSON into the local inbox:
+
+```sh
+node scripts/facebook-monitor.mjs inbox --from-clipboard --name <group-or-search-name>
+```
+
+If clipboard access is awkward, paste into stdin instead:
+
+```sh
+pbpaste | node scripts/facebook-monitor.mjs inbox - --name <group-or-search-name>
+```
+
+6. Score, dedupe, and open the review page:
+
+```sh
+node scripts/facebook-monitor.mjs scan --open
+```
+
+7. After reviewing the scored output, mark scanned posts as seen:
+
+```sh
+node scripts/facebook-monitor.mjs scan --update-state
+```
+
+8. To manually run scoring with every option:
 
 ```sh
 node scripts/facebook-monitor.mjs score monitoring/facebook-inbox/*.json --out monitoring/facebook-candidates.json --snippets monitoring/facebook-candidates.generated.js --review monitoring/facebook-review.html --state monitoring/facebook-monitor-state.json --new-only
 open monitoring/facebook-review.html
 ```
 
-7. After reviewing the scored output, mark scanned posts as seen:
-
-```sh
-node scripts/facebook-monitor.mjs score monitoring/facebook-inbox/*.json --state monitoring/facebook-monitor-state.json --update-state
-```
-
-8. Review candidates. To preview an app-ready card for a selected handle or hash:
+9. Review candidates. To preview an app-ready card for a selected handle or hash:
 
 ```sh
 node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash>
 ```
 
-9. After verifying availability and poster identity, apply selected cards to the app:
+10. After verifying availability and poster identity, apply selected cards to the app:
 
 ```sh
 node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash> --apply

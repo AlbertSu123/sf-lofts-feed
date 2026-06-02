@@ -75,7 +75,9 @@ function usage() {
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
   node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
+  node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
+  node scripts/facebook-monitor.mjs scan [--inbox monitoring/facebook-inbox] [--open] [--all] [--update-state]
   node scripts/facebook-monitor.mjs publish <candidates.json> --select <handle-or-hash,...> [--apply] [--index index.html]
 
 Raw captures and generated candidates are ignored by git. Review and verify before publishing any private-group lead.`);
@@ -250,6 +252,102 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 `;
   fs.writeFileSync(outputPath(out), html);
   console.log(JSON.stringify({ out, bytes: html.length }, null, 2));
+}
+
+function readStdin() {
+  return fs.readFileSync(0, "utf8");
+}
+
+function readCaptureInput(args, opts) {
+  if (opts["from-clipboard"]) {
+    const result = childProcess.spawnSync("pbpaste", { encoding: "utf8" });
+    if (result.status !== 0) {
+      throw new Error("Could not read clipboard with pbpaste.");
+    }
+    return result.stdout;
+  }
+  const first = args[0];
+  if (!first || first === "-") return readStdin();
+  return fs.readFileSync(path.resolve(process.cwd(), first), "utf8");
+}
+
+function normalizeCapturePayload(raw) {
+  const text = String(raw || "").trim();
+  if (!text) throw new Error("Capture input is empty.");
+  try {
+    const parsed = JSON.parse(text);
+    const rows = Array.isArray(parsed) ? parsed : parsed.posts || parsed.items || [parsed];
+    return rows.map((row, i) => ({
+      capturedAt: row.capturedAt || new Date().toISOString(),
+      pageTitle: row.pageTitle || row.group || "",
+      pageUrl: row.pageUrl || "",
+      url: row.url || "",
+      links: Array.isArray(row.links) ? row.links : [],
+      images: Array.isArray(row.images) ? row.images : [],
+      sourceKind: row.sourceKind || "",
+      text: cleanText(row.text || row.body || row.content || "")
+    })).filter(row => row.text);
+  } catch {
+    return [{
+      capturedAt: new Date().toISOString(),
+      pageTitle: "",
+      pageUrl: "",
+      url: "",
+      links: [],
+      images: [],
+      sourceKind: "",
+      text: cleanText(text)
+    }];
+  }
+}
+
+function slug(value) {
+  return String(value || "facebook-capture")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "facebook-capture";
+}
+
+function timestampForFile() {
+  return new Date().toISOString().replace(/[:.]/g, "").replace("T", "-").replace("Z", "Z");
+}
+
+function runInbox(args, opts) {
+  const rows = normalizeCapturePayload(readCaptureInput(args, opts));
+  const outDir = outputPath(opts["out-dir"] || "monitoring/facebook-inbox");
+  fs.mkdirSync(outDir, { recursive: true });
+  const name = slug(opts.name || rows[0]?.pageTitle || rows[0]?.sourceKind || "facebook-capture");
+  const out = path.join(outDir, `${timestampForFile()}-${name}.json`);
+  fs.writeFileSync(out, JSON.stringify(rows, null, 2) + "\n");
+  console.log(JSON.stringify({
+    saved: path.relative(ROOT, out),
+    posts: rows.length,
+    sourceName: name
+  }, null, 2));
+}
+
+function inboxFiles(dir) {
+  const root = outputPath(dir || "monitoring/facebook-inbox");
+  if (!fs.existsSync(root)) return [];
+  return fs.readdirSync(root)
+    .filter(name => /\.(json|txt)$/i.test(name))
+    .map(name => path.join(root, name))
+    .sort();
+}
+
+function runScan(opts) {
+  const files = inboxFiles(opts.inbox);
+  const scoreOpts = {
+    ...opts,
+    out: opts.out || DEFAULT_CANDIDATES_PATH,
+    snippets: opts.snippets || "monitoring/facebook-candidates.generated.js",
+    review: opts.review || "monitoring/facebook-review.html",
+    state: opts.state || "monitoring/facebook-monitor-state.json"
+  };
+  if (!opts.all) scoreOpts["new-only"] = true;
+  runScore(files, scoreOpts);
+  if (opts.open) childProcess.spawnSync("open", [outputPath(scoreOpts.review)], { stdio: "ignore" });
 }
 
 function escapeMd(value) {
@@ -696,12 +794,21 @@ if (!cmd || cmd === "help") {
   generateWatchBatch(loadConfig(), opts);
 } else if (cmd === "bookmarklet") {
   generateBookmarklet(opts);
+} else if (cmd === "inbox") {
+  try {
+    runInbox(args, opts);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
 } else if (cmd === "score") {
   if (!args.length) {
     usage();
     process.exit(1);
   }
   runScore(args.map(file => path.resolve(process.cwd(), file)), opts);
+} else if (cmd === "scan") {
+  runScan(opts);
 } else if (cmd === "publish") {
   runPublish(args[0] || DEFAULT_CANDIDATES_PATH, opts);
 } else {
