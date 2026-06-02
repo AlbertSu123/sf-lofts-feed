@@ -644,21 +644,26 @@ function shellQuote(value) {
 function generateBookmarklet(opts) {
   const source = fs.readFileSync(outputPath("monitoring/facebook-capture-snippet.js"), "utf8").trim();
   const href = `javascript:${encodeURIComponent(source)}`;
+  const deepSource = `window.__SF_LOFTS_FB_CAPTURE_OPTIONS={deep:true,scrollSteps:5};\n${source}`;
+  const deepHref = `javascript:${encodeURIComponent(deepSource)}`;
   const out = opts.out || "monitoring/facebook-capture-bookmarklet.html";
   const html = `<!doctype html>
 <meta charset="utf-8">
 <title>Facebook Housing Capture Bookmarklet</title>
 <style>
 body{font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5;margin:28px;max-width:880px;color:#111}
-a.bookmarklet{display:inline-block;background:#0866ff;color:white;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:8px}
-textarea{width:100%;height:150px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+a.bookmarklet{display:inline-block;background:#0866ff;color:white;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:8px;margin:0 8px 8px 0}
+a.deep{background:#116b42}
+textarea{width:100%;height:135px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style>
 <h1>Facebook Housing Capture Bookmarklet</h1>
-<p>Drag this button to the browser bookmarks bar. On Facebook group lists, group searches, post searches, or Marketplace results pages, click it to copy visible group links and housing-like posts as JSON.</p>
-<p><a class="bookmarklet" href="${href}">Capture FB Housing</a></p>
+<p>Drag these buttons to the browser bookmarks bar. On Facebook group lists, group searches, post searches, or Marketplace results pages, click quick capture for the currently visible page, or deep capture to scroll several pagefuls before exporting.</p>
+<p><a class="bookmarklet" href="${href}">Capture FB Housing</a><a class="bookmarklet deep" href="${deepHref}">Capture FB Housing Deep</a></p>
 <p>If dragging does not work, create a new bookmark named <code>Capture FB Housing</code> and paste this URL:</p>
 <textarea readonly>${escapeHtml(href)}</textarea>
+<p>For the deeper scroll-and-capture bookmark, create one named <code>Capture FB Housing Deep</code> and paste this URL:</p>
+<textarea readonly>${escapeHtml(deepHref)}</textarea>
 `;
   fs.writeFileSync(outputPath(out), html);
   const summary = { out, bytes: html.length };

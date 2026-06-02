@@ -1,4 +1,12 @@
 (async () => {
+  const options = window.__SF_LOFTS_FB_CAPTURE_OPTIONS || {};
+  try {
+    delete window.__SF_LOFTS_FB_CAPTURE_OPTIONS;
+  } catch {
+    window.__SF_LOFTS_FB_CAPTURE_OPTIONS = null;
+  }
+  const captureMode = options.deep ? "deep" : "quick";
+  const scrollSteps = Math.max(0, Math.min(12, Number(options.scrollSteps ?? (options.deep ? 5 : 0)) || 0));
   const housingPattern = /\$|rent|lease|sublet|sublease|takeover|bed|bd|br|loft|apartment|office|den|room/i;
   const groupHousingPattern = /housing|apartment|apartments|apt\b|room|roommate|roommates|sublet|sublease|lease|rent|rental|loft|live.?work/i;
   const linkPattern = /facebook\.com\/(groups|marketplace|permalink|posts|share|photo)/i;
@@ -51,7 +59,36 @@
     if (buttons.length) await wait(600);
     return buttons.length;
   }
-  const expandedControls = await expandVisibleText();
+  let expandedControls = await expandVisibleText();
+  async function loadMorePosts() {
+    if (!scrollSteps) {
+      return { captureMode, requestedScrollSteps: 0, completedScrollSteps: 0, startY: window.scrollY, endY: window.scrollY };
+    }
+    const startY = window.scrollY;
+    let previousHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
+    let completed = 0;
+    for (let i = 0; i < scrollSteps; i++) {
+      window.scrollBy(0, Math.max(650, Math.round(window.innerHeight * 0.85)));
+      await wait(900);
+      expandedControls += await expandVisibleText();
+      const nextHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
+      completed += 1;
+      if (nextHeight <= previousHeight && window.scrollY + window.innerHeight >= nextHeight - 80) break;
+      previousHeight = nextHeight;
+    }
+    if (options.returnToStart !== false) {
+      window.scrollTo(0, startY);
+      await wait(250);
+    }
+    return {
+      captureMode,
+      requestedScrollSteps: scrollSteps,
+      completedScrollSteps: completed,
+      startY,
+      endY: window.scrollY
+    };
+  }
+  const scrollCapture = await loadMorePosts();
   function downloadPayload(payload) {
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -113,6 +150,7 @@
       links,
       images,
       sourceKind: links.some(href => /\/marketplace\//i.test(href)) || /\/marketplace\//i.test(location.href) ? "marketplace" : "post",
+      captureMode,
       expandedControls,
       text
     });
@@ -144,14 +182,16 @@
     pageUrl: location.href,
     posts,
     groups: Array.from(groups.values()),
+    captureMode,
+    scrollCapture,
     expandedControls
   }, null, 2);
   const filename = downloadPayload(payload);
   navigator.clipboard.writeText(payload).then(
-    () => alert(`Downloaded ${filename} and copied ${posts.length} housing-like posts plus ${groups.size} visible groups to clipboard. Expanded ${expandedControls} visible controls first.`),
+    () => alert(`Downloaded ${filename} and copied ${posts.length} housing-like posts plus ${groups.size} visible groups to clipboard. Mode: ${captureMode}; scrolled ${scrollCapture.completedScrollSteps}/${scrollCapture.requestedScrollSteps}; expanded ${expandedControls} controls.`),
     () => {
       console.log(payload);
-      alert(`Downloaded ${filename}. Clipboard write failed, but ${posts.length} posts and ${groups.size} groups were printed to the console. Expanded ${expandedControls} visible controls first.`);
+      alert(`Downloaded ${filename}. Clipboard write failed, but ${posts.length} posts and ${groups.size} groups were printed to the console. Mode: ${captureMode}; scrolled ${scrollCapture.completedScrollSteps}/${scrollCapture.requestedScrollSteps}; expanded ${expandedControls} controls.`);
     }
   );
 })();
