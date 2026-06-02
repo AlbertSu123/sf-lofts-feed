@@ -81,7 +81,7 @@ function usage() {
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
-  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--open] [--open-watch] [--open-review] [--no-downloads] [--no-groups] [--no-housing-only] [--all] [--state monitoring/facebook-monitor-state.json]
+  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--open] [--open-watch] [--open-review] [--no-downloads] [--no-groups] [--no-housing-only] [--all] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs downloads [--downloads-dir ~/Downloads] [--out-dir monitoring/facebook-inbox] [--groups] [--housing-only] [--groups-out monitoring/facebook-groups.local.json] [--state monitoring/facebook-monitor-state.json] [--all]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
@@ -195,8 +195,8 @@ function generateWatchBatch(config, opts) {
     "",
     "1. Open each link while logged into Facebook.",
     "2. Sort or filter by recent posts where Facebook exposes that control.",
-    `3. Run \`${capturePath}\` on the results page.`,
-    "4. Save copied JSON under `monitoring/facebook-inbox/`.",
+    "3. Click the `Capture FB Housing` bookmarklet on the loaded page.",
+    "4. Let the downloaded `fb-housing-capture-*.json` file land in Downloads.",
     "5. Run `node scripts/facebook-monitor.mjs run --open-review` to import downloads, score leads, and refresh the next batch.",
     "",
     "| Priority | Surface | Term | URL |",
@@ -219,6 +219,7 @@ code,textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}textarea{w
 <h1>Facebook Watch Batch</h1>
 <p>Generated ${escapeHtml(now)}. Run the capture snippet after each promising page loads.</p>
 <p><a href="${escapeHtml(captureHref)}">Open capture snippet file</a></p>
+<p>After capture files download, run <code>node scripts/facebook-monitor.mjs run --open-review</code> to import, score, and refresh the next batch.</p>
 <table>
 <thead><tr><th>Priority</th><th>Surface</th><th>Term</th><th>Open</th></tr></thead>
 <tbody>
@@ -719,6 +720,16 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
   const watchRows = generateSearches(config);
   const candidates = fs.existsSync(candidatesPath) ? readJson(candidatesPath) : [];
   const coverage = groupCaptureCoverage(config, opts);
+  const setupGaps = [];
+  if (!config.facebook.groups.length) {
+    setupGaps.push("No configured Facebook housing groups yet.");
+  }
+  if (!files.length) {
+    setupGaps.push("No imported Facebook capture files yet.");
+  }
+  if (!candidates.length) {
+    setupGaps.push("No scored Facebook candidates yet.");
+  }
   return {
     groups: config.facebook.groups.length,
     groupNames: config.facebook.groups.map(group => group.name),
@@ -740,7 +751,8 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
       neverCapturedGroups: coverage.neverCapturedGroups,
       needsCapture: coverage.groups.filter(group => group.status !== "fresh").slice(0, 12)
     },
-    cadenceHours: config.facebook.scanCadenceHours || 6
+    cadenceHours: config.facebook.scanCadenceHours || 6,
+    setupGaps
   };
 }
 
@@ -755,6 +767,8 @@ function runCoverage(opts = {}) {
 function runNext(opts) {
   const config = loadConfig(opts);
   const out = opts.out || "monitoring/facebook-next.md";
+  const candidatesFile = opts.candidates || DEFAULT_CANDIDATES_PATH;
+  const reviewFile = opts.review || "monitoring/facebook-review.html";
   const rotate = !opts["no-rotate"];
   const coverage = groupCaptureCoverage(config, opts);
   const staleRows = coverage.groups.filter(group => group.status !== "fresh");
@@ -769,13 +783,14 @@ function runNext(opts) {
     rotate,
     quiet: true
   });
-  const snapshot = monitorSnapshot(config, opts);
+  const snapshot = monitorSnapshot(config, { ...opts, candidates: candidatesFile });
   const generatedAt = new Date().toISOString();
   const groupLines = config.facebook.groups.length
     ? config.facebook.groups.map(group => `- ${group.name} (${group.priority || "normal"}): ${group.url}`)
     : [
       "- No private groups configured yet.",
-      "- Paste copied group links into the local group list: `pbpaste | node scripts/facebook-monitor.mjs groups - --priority high`"
+      "- Run the bookmarklet on `facebook.com/groups/feed/` or your joined-groups page, then import housing-like groups with `node scripts/facebook-monitor.mjs run --open-watch --open-review`.",
+      "- You can also paste copied group links into the local group list: `pbpaste | node scripts/facebook-monitor.mjs groups - --priority high --housing-only`"
     ];
   const commands = {
     monitorRun: "node scripts/facebook-monitor.mjs run --limit 40 --open-watch --open-review",
@@ -786,10 +801,20 @@ function runNext(opts) {
     captureInbox: "pbpaste | node scripts/facebook-monitor.mjs inbox - --name <group-or-search-name>",
     scan: "node scripts/facebook-monitor.mjs scan --open",
     markSeen: "node scripts/facebook-monitor.mjs scan --update-state",
-    publishPreview: "node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash>",
-    publishApply: "node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash> --apply"
+    publishPreview: `node scripts/facebook-monitor.mjs publish ${candidatesFile} --select <handle-or-hash>`,
+    publishApply: `node scripts/facebook-monitor.mjs publish ${candidatesFile} --select <handle-or-hash> --apply`
   };
   const counts = snapshot.candidateStatus;
+  const setupLines = [];
+  if (!snapshot.groups) {
+    setupLines.push("Group discovery is still empty. Capture Facebook's joined-groups/feed page with the bookmarklet so the monitor can build the private-group watch list.");
+  }
+  if (!snapshot.inboxFiles) {
+    setupLines.push("Capture inbox is still empty. Open watch links while logged into Facebook, click the bookmarklet, then rerun `node scripts/facebook-monitor.mjs run --open-review`.");
+  }
+  if (!snapshot.candidates) {
+    setupLines.push("Review queue is empty. It will populate after the first imported capture with housing-like posts.");
+  }
   const freshnessLines = !coverage.groups.length
     ? ["- No groups configured yet."]
     : staleRows.length
@@ -813,6 +838,10 @@ function runNext(opts) {
     "",
     ...groupLines,
     "",
+    "## Setup Gaps",
+    "",
+    ...(setupLines.length ? setupLines.map(line => `- ${line}`) : ["- No setup gaps detected in local monitor state."]),
+    "",
     "## Current Queue",
     "",
     `Inbox capture files: ${snapshot.inboxFiles}`,
@@ -834,7 +863,8 @@ function runNext(opts) {
     `Watch page: ${relativeOut(watch.html || "monitoring/facebook-watch.html")}`,
     `Watch markdown: ${relativeOut(watch.markdown)}`,
     `Open script: ${relativeOut(watch.openScript)}`,
-    `Review page: ${relativeOut("monitoring/facebook-review.html")}`,
+    `Review page: ${relativeOut(reviewFile)}`,
+    `Candidates file: ${relativeOut(candidatesFile)}`,
     "",
     "## Next Commands",
     "",
@@ -872,6 +902,7 @@ function runNext(opts) {
       staleGroups: coverage.staleGroups,
       neverCapturedGroups: coverage.neverCapturedGroups
     },
+    setupGaps: setupLines,
     commands
   };
   if (!opts.quiet) console.log(JSON.stringify(summary, null, 2));
@@ -882,6 +913,8 @@ function runMonitorLoop(opts = {}) {
   const inboxDir = opts.inbox || opts["out-dir"] || "monitoring/facebook-inbox";
   const state = opts.state || DEFAULT_STATE_PATH;
   const groupsOut = opts["groups-out"] || "monitoring/facebook-groups.local.json";
+  const candidatesFile = opts.out || opts.candidates || DEFAULT_CANDIDATES_PATH;
+  const snippetsFile = opts.snippets || "monitoring/facebook-candidates.generated.js";
   const review = opts.review || "monitoring/facebook-review.html";
   const watchHtml = opts.html || "monitoring/facebook-watch.html";
   const openWatch = Boolean(opts.open || opts["open-watch"]) && !opts["no-open-watch"];
@@ -913,8 +946,8 @@ function runMonitorLoop(opts = {}) {
   const scan = runScan({
     ...opts,
     inbox: inboxDir,
-    out: opts.out || DEFAULT_CANDIDATES_PATH,
-    snippets: opts.snippets || "monitoring/facebook-candidates.generated.js",
+    out: candidatesFile,
+    snippets: snippetsFile,
     review,
     state,
     open: false,
@@ -926,6 +959,8 @@ function runMonitorLoop(opts = {}) {
     watch: opts.watch || "monitoring/facebook-watch.md",
     html: watchHtml,
     script: opts.script || "monitoring/facebook-open-watch.sh",
+    candidates: candidatesFile,
+    review,
     limit: opts.limit || 40,
     state,
     open: openWatch,
@@ -935,7 +970,7 @@ function runMonitorLoop(opts = {}) {
   const snapshot = monitorSnapshot(loadConfig({ ...opts, "groups-out": groupsOut }), {
     ...opts,
     inbox: inboxDir,
-    candidates: opts.out || DEFAULT_CANDIDATES_PATH,
+    candidates: candidatesFile,
     state
   });
   const summary = {
@@ -953,7 +988,7 @@ function runMonitorLoop(opts = {}) {
       review: `open ${shellQuote(outputPath(review))}`,
       watch: `open ${shellQuote(outputPath(watchHtml))}`,
       markSeen: "node scripts/facebook-monitor.mjs scan --update-state",
-      publish: "node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash> --apply"
+      publish: `node scripts/facebook-monitor.mjs publish ${candidatesFile} --select <handle-or-hash> --apply`
     }
   };
   console.log(JSON.stringify(summary, null, 2));
@@ -1241,7 +1276,7 @@ header{display:flex;flex-wrap:wrap;gap:8px;color:#555}.pick{color:#111;font-weig
   <button type="button" id="copyBatch">Copy command</button>
 </section>
 <main class="grid">
-${rows || "<p>No candidates.</p>"}
+${rows || "<p>No candidates yet. Open the watch batch while logged into Facebook, click the Capture FB Housing bookmarklet on promising pages, then rerun <code>node scripts/facebook-monitor.mjs run --open-review</code>.</p>"}
 </main>
 <script>
 const candidateFile=${js(candidateFile)};

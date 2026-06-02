@@ -15,6 +15,8 @@ pbpaste | node scripts/facebook-monitor.mjs groups - --priority high
 node scripts/facebook-monitor.mjs status
 ```
 
+`status` includes `setupGaps`; if it reports no groups, no captures, or no candidates, the monitor still needs a logged-in Facebook capture before it can source real leads.
+
 Check which configured groups have not produced a recent capture:
 
 ```sh
