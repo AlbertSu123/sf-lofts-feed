@@ -58,6 +58,8 @@ Check which configured groups have not produced a recent capture:
 node scripts/facebook-monitor.mjs coverage --stale-hours 24
 ```
 
+The full loop also refreshes `monitoring/facebook-coverage.html` and `monitoring/facebook-coverage.md`, which show every configured group, freshness status, last capture time, capture count, and one-click group/search links.
+
 You can also run the capture bookmarklet on Facebook Groups pages such as `facebook.com/groups/feed/` or your joined-groups list, then import only housing-like groups:
 
 ```sh
@@ -165,7 +167,7 @@ To remove it:
 scripts/uninstall-facebook-monitor-agent.sh
 ```
 
-The agent imports new capture downloads, refreshes `monitoring/facebook-review.html` and `monitoring/facebook-digest.md`, creates `monitoring/facebook-next.md`, refreshes the local watch batch, opens the watch page, and shows a macOS notification; it does not scrape Facebook in the background.
+The agent imports new capture downloads, refreshes `monitoring/facebook-review.html`, `monitoring/facebook-digest.md`, and `monitoring/facebook-coverage.html`, creates `monitoring/facebook-next.md`, refreshes the local watch batch, opens the watch page, and shows a macOS notification; it does not scrape Facebook in the background.
 
 You can still run a single scan prompt manually:
 

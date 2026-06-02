@@ -10,6 +10,8 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..")
 const CONFIG_PATH = path.join(ROOT, "monitoring/facebook-monitor.config.json");
 const DEFAULT_CANDIDATES_PATH = "monitoring/facebook-candidates.json";
 const DEFAULT_DIGEST_PATH = "monitoring/facebook-digest.md";
+const DEFAULT_COVERAGE_PATH = "monitoring/facebook-coverage.md";
+const DEFAULT_COVERAGE_HTML_PATH = "monitoring/facebook-coverage.html";
 const DEFAULT_STATE_PATH = "monitoring/facebook-monitor-state.json";
 const DEFAULT_GROUP_SEEDS_PATH = "monitoring/facebook-group-seeds.json";
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
@@ -101,8 +103,8 @@ function usage() {
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
   node scripts/facebook-monitor.mjs doctor [--downloads-dir ~/Downloads] [--state monitoring/facebook-monitor-state.json] [--candidates monitoring/facebook-candidates.json] [--inbox monitoring/facebook-inbox]
-  node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
-  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--digest monitoring/facebook-digest.md] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html] [--open] [--open-watch] [--open-links] [--open-review] [--open-discovery] [--no-downloads] [--no-groups] [--no-housing-only] [--no-discovery] [--all] [--state monitoring/facebook-monitor-state.json]
+  node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24] [--out monitoring/facebook-coverage.md] [--html monitoring/facebook-coverage.html]
+  node scripts/facebook-monitor.mjs run [--downloads-dir ~/Downloads] [--limit 40] [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--digest monitoring/facebook-digest.md] [--coverage monitoring/facebook-coverage.md] [--coverage-html monitoring/facebook-coverage.html] [--next monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--review monitoring/facebook-review.html] [--discovery monitoring/facebook-discovery.md] [--discovery-html monitoring/facebook-discovery.html] [--open] [--open-watch] [--open-links] [--open-review] [--open-discovery] [--no-downloads] [--no-groups] [--no-housing-only] [--no-discovery] [--all] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--open-links] [--no-rotate] [--no-focus-stale] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs downloads [--downloads-dir ~/Downloads] [--out-dir monitoring/facebook-inbox] [--groups] [--housing-only] [--groups-out monitoring/facebook-groups.local.json] [--state monitoring/facebook-monitor-state.json] [--all]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
@@ -951,6 +953,75 @@ function groupCaptureCoverage(config = loadConfig(), opts = {}) {
   };
 }
 
+function coverageSearchUrl(row, config) {
+  const term = (config.facebook.searchTerms || [])[0] || "San Francisco housing";
+  return groupSearchUrl(row.url, term);
+}
+
+function coverageFiles(config, coverage, opts = {}) {
+  const mdOut = opts.out || opts.coverage || DEFAULT_COVERAGE_PATH;
+  const htmlOut = opts.html || opts["coverage-html"] || DEFAULT_COVERAGE_HTML_PATH;
+  const now = new Date().toISOString();
+  const ageLabel = row => row.ageHours === null ? "never" : `${row.ageHours}h`;
+  const lastLabel = row => row.lastCapturedAt || "never";
+  const sourceLabel = row => row.lastSourceFile || "none";
+  const md = [
+    "# Facebook Group Capture Coverage",
+    "",
+    `Generated: ${now}`,
+    `Stale threshold: ${coverage.staleHours} hours`,
+    "",
+    "## Snapshot",
+    "",
+    `- Configured groups: ${coverage.totalGroups}`,
+    `- Fresh groups: ${coverage.freshGroups}`,
+    `- Stale groups: ${coverage.staleGroups}`,
+    `- Never captured groups: ${coverage.neverCapturedGroups}`,
+    "",
+    "## Groups",
+    "",
+    "| Status | Priority | Group | Captures | Last captured | Age | Source | Links |",
+    "| --- | --- | --- | ---: | --- | --- | --- | --- |",
+    ...coverage.groups.map(row => {
+      const links = `[group](${row.url}) · [search](${coverageSearchUrl(row, config)})`;
+      return `| ${escapeMd(row.status)} | ${escapeMd(row.priority)} | ${escapeMd(row.name)} | ${row.captureCount} | ${escapeMd(lastLabel(row))} | ${escapeMd(ageLabel(row))} | ${escapeMd(sourceLabel(row))} | ${links} |`;
+    })
+  ].join("\n") + "\n";
+  fs.writeFileSync(outputPath(mdOut), md);
+
+  const html = `<!doctype html>
+<meta charset="utf-8">
+<title>Facebook Group Capture Coverage</title>
+<style>
+body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.45;margin:24px;color:#111;background:#fafafa}
+a{color:#06c}.summary{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.pill{background:#fff;border:1px solid #ddd;border-radius:999px;padding:6px 10px}
+table{border-collapse:collapse;width:100%;max-width:1220px;background:#fff}td,th{border:1px solid #ddd;padding:7px;text-align:left;vertical-align:top}th{background:#f6f6f6}
+.never{background:#fff3f3}.stale{background:#fff8e8}.fresh{background:#eef8ef}.low{color:#666}.links{white-space:nowrap}
+</style>
+<h1>Facebook Group Capture Coverage</h1>
+<p>Generated ${escapeHtml(now)}. Stale threshold: ${escapeHtml(coverage.staleHours)} hours.</p>
+<section class="summary">
+  <span class="pill">${coverage.totalGroups} configured</span>
+  <span class="pill">${coverage.freshGroups} fresh</span>
+  <span class="pill">${coverage.staleGroups} stale</span>
+  <span class="pill">${coverage.neverCapturedGroups} never captured</span>
+</section>
+<table>
+<thead><tr><th>Status</th><th>Priority</th><th>Group</th><th>Captures</th><th>Last captured</th><th>Age</th><th>Source</th><th>Links</th></tr></thead>
+<tbody>
+${coverage.groups.map(row => `<tr class="${escapeHtml(row.status)}"><td>${escapeHtml(row.status)}</td><td class="${escapeHtml(row.priority)}">${escapeHtml(row.priority)}</td><td>${escapeHtml(row.name)}</td><td>${row.captureCount}</td><td>${escapeHtml(lastLabel(row))}</td><td>${escapeHtml(ageLabel(row))}</td><td>${escapeHtml(sourceLabel(row))}</td><td class="links"><a href="${escapeHtml(row.url)}" target="_blank" rel="noopener">group</a> · <a href="${escapeHtml(coverageSearchUrl(row, config))}" target="_blank" rel="noopener">search</a></td></tr>`).join("\n")}
+</tbody>
+</table>
+`;
+  fs.writeFileSync(outputPath(htmlOut), html);
+
+  return {
+    markdown: mdOut,
+    html: htmlOut,
+    generatedAt: now
+  };
+}
+
 function runScan(opts) {
   const files = inboxFiles(opts.inbox);
   const scoreOpts = {
@@ -1095,6 +1166,8 @@ function generatedMonitorFiles(opts = {}) {
     opts.watch || "monitoring/facebook-watch.md",
     opts.html || "monitoring/facebook-watch.html",
     opts.script || "monitoring/facebook-open-watch.sh",
+    opts.coverage || DEFAULT_COVERAGE_PATH,
+    opts["coverage-html"] || DEFAULT_COVERAGE_HTML_PATH,
     opts.review || "monitoring/facebook-review.html",
     opts.digest || DEFAULT_DIGEST_PATH,
     opts.candidates || DEFAULT_CANDIDATES_PATH
@@ -1254,7 +1327,15 @@ function runSetup(opts = {}) {
 }
 
 function runCoverage(opts = {}) {
-  console.log(JSON.stringify(groupCaptureCoverage(loadConfig(opts), opts), null, 2));
+  const config = loadConfig(opts);
+  const coverage = groupCaptureCoverage(config, opts);
+  const files = (opts.out || opts.html || opts.coverage || opts["coverage-html"])
+    ? coverageFiles(config, coverage, opts)
+    : null;
+  console.log(JSON.stringify({
+    ...coverage,
+    files
+  }, null, 2));
 }
 
 function runNext(opts) {
@@ -1420,6 +1501,8 @@ function runMonitorLoop(opts = {}) {
   const snippetsFile = opts.snippets || "monitoring/facebook-candidates.generated.js";
   const review = opts.review || "monitoring/facebook-review.html";
   const digest = opts.digest || DEFAULT_DIGEST_PATH;
+  const coverageMd = opts.coverage || DEFAULT_COVERAGE_PATH;
+  const coverageHtml = opts["coverage-html"] || DEFAULT_COVERAGE_HTML_PATH;
   const watchHtml = opts.html || "monitoring/facebook-watch.html";
   const discoveryMd = opts.discovery || "monitoring/facebook-discovery.md";
   const discoveryHtml = opts["discovery-html"] || "monitoring/facebook-discovery.html";
@@ -1476,11 +1559,21 @@ function runMonitorLoop(opts = {}) {
     "open-links": opts["open-links"] || opts.openLinks,
     quiet: true
   });
-  const snapshot = monitorSnapshot(loadConfig({ ...opts, "groups-out": groupsOut }), {
+  const loopConfig = loadConfig({ ...opts, "groups-out": groupsOut });
+  const snapshot = monitorSnapshot(loopConfig, {
     ...opts,
     inbox: inboxDir,
     candidates: candidatesFile,
     state
+  });
+  const coverageReport = coverageFiles(loopConfig, groupCaptureCoverage(loopConfig, {
+    ...opts,
+    inbox: inboxDir,
+    state
+  }), {
+    ...opts,
+    out: coverageMd,
+    html: coverageHtml
   });
   const discovery = generateDiscovery ? generateGroupDiscovery({
     ...opts,
@@ -1498,6 +1591,7 @@ function runMonitorLoop(opts = {}) {
     downloads,
     scan,
     next,
+    coverage: coverageReport,
     discovery,
     status: snapshot,
     opened: {
@@ -1511,6 +1605,7 @@ function runMonitorLoop(opts = {}) {
       discover: "node scripts/facebook-monitor.mjs discover --open",
       review: `open ${shellQuote(outputPath(review))}`,
       digest: `open ${shellQuote(outputPath(digest))}`,
+      coverage: `open ${shellQuote(outputPath(coverageHtml))}`,
       watch: `open ${shellQuote(outputPath(watchHtml))}`,
       discovery: discovery ? `open ${shellQuote(outputPath(discovery.html))}` : null,
       markSeen: "node scripts/facebook-monitor.mjs scan --update-state",
