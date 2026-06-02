@@ -7,6 +7,9 @@ NEXT_MD="${FACEBOOK_MONITOR_NEXT_MD:-monitoring/facebook-next.md}"
 WATCH_HTML="${FACEBOOK_MONITOR_WATCH_HTML:-monitoring/facebook-watch.html}"
 WATCH_MD="${FACEBOOK_MONITOR_WATCH_MD:-monitoring/facebook-watch.md}"
 OPEN_SCRIPT="${FACEBOOK_MONITOR_OPEN_SCRIPT:-monitoring/facebook-open-watch.sh}"
+GROUP_WATCH_HTML="${FACEBOOK_MONITOR_GROUP_WATCH_HTML:-monitoring/facebook-group-watch.html}"
+GROUP_WATCH_MD="${FACEBOOK_MONITOR_GROUP_WATCH_MD:-monitoring/facebook-group-watch.md}"
+GROUP_OPEN_SCRIPT="${FACEBOOK_MONITOR_GROUP_OPEN_SCRIPT:-monitoring/facebook-open-groups.sh}"
 REVIEW_HTML="${FACEBOOK_MONITOR_REVIEW_HTML:-monitoring/facebook-review.html}"
 RUN_JSON="${FACEBOOK_MONITOR_RUN_JSON:-/tmp/sf-lofts-facebook-monitor-run.json}"
 
@@ -29,9 +32,12 @@ cd "$ROOT"
   --watch "$WATCH_MD" \
   --html "$WATCH_HTML" \
   --script "$OPEN_SCRIPT" \
+  --group-watch "$GROUP_WATCH_MD" \
+  --group-watch-html "$GROUP_WATCH_HTML" \
+  --group-watch-script "$GROUP_OPEN_SCRIPT" \
   --limit "$LIMIT" \
-  --open-watch >"$RUN_JSON"
+  --open-group-watch >"$RUN_JSON"
 
 if command -v osascript >/dev/null 2>&1; then
-  osascript -e 'display notification "Facebook housing loop is ready." with title "SF Lofts Feed" subtitle "Downloads imported, review scored, watch page refreshed."' >/dev/null 2>&1 || true
+  osascript -e 'display notification "Facebook housing loop is ready." with title "SF Lofts Feed" subtitle "Downloads imported, review scored, group sweep refreshed."' >/dev/null 2>&1 || true
 fi

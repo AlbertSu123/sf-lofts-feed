@@ -15,6 +15,9 @@ monitoring/facebook-open-discovery*.sh
 monitoring/facebook-watch*.html
 monitoring/facebook-watch*.md
 monitoring/facebook-open-watch*.sh
+monitoring/facebook-group-watch*.html
+monitoring/facebook-group-watch*.md
+monitoring/facebook-open-groups*.sh
 monitoring/facebook-capture-bookmarklet.html
 monitoring/facebook-review*.html
 monitoring/facebook-groups.local.json
