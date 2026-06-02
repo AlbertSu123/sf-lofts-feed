@@ -15,6 +15,12 @@ pbpaste | node scripts/facebook-monitor.mjs groups - --priority high
 node scripts/facebook-monitor.mjs status
 ```
 
+Check which configured groups have not produced a recent capture:
+
+```sh
+node scripts/facebook-monitor.mjs coverage --stale-hours 24
+```
+
 You can also run the capture bookmarklet on Facebook Groups pages such as `facebook.com/groups/feed/` or your joined-groups list, then import only housing-like groups:
 
 ```sh

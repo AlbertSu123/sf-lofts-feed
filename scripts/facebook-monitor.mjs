@@ -80,6 +80,7 @@ function usage() {
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
   node scripts/facebook-monitor.mjs groups [group-urls.txt|-] [--from-clipboard] [--priority high|normal|low] [--housing-only] [--out monitoring/facebook-groups.local.json]
   node scripts/facebook-monitor.mjs status
+  node scripts/facebook-monitor.mjs coverage [--inbox monitoring/facebook-inbox] [--stale-hours 24]
   node scripts/facebook-monitor.mjs next [--out monitoring/facebook-next.md] [--watch monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--script monitoring/facebook-open-watch.sh] [--limit 40] [--open] [--no-rotate] [--state monitoring/facebook-monitor-state.json]
   node scripts/facebook-monitor.mjs inbox [capture.json|-] [--from-clipboard] [--name source-name] [--out-dir monitoring/facebook-inbox]
   node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
@@ -490,6 +491,79 @@ function inboxFiles(dir) {
     .sort();
 }
 
+function captureTimestamp(post, file) {
+  const parsed = Date.parse(post.capturedAt || "");
+  if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  try {
+    return fs.statSync(file).mtime.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function postGroupUrl(post) {
+  const candidates = [post.pageUrl, post.url, ...(post.links || [])];
+  for (const candidate of candidates) {
+    if (!/facebook\.com\/groups\//i.test(String(candidate || ""))) continue;
+    const url = canonicalGroupUrl(candidate);
+    if (url) return url;
+  }
+  return "";
+}
+
+function groupCaptureCoverage(config = loadConfig(), opts = {}) {
+  const staleHours = Number(opts["stale-hours"] || opts.staleHours || 24);
+  const parsedNow = opts.now ? Date.parse(opts.now) : NaN;
+  const now = Number.isFinite(parsedNow) ? parsedNow : Date.now();
+  const groups = config.facebook.groups || [];
+  const byUrl = new Map(groups.map(group => [group.url, {
+    name: group.name,
+    url: group.url,
+    priority: group.priority || "normal",
+    captureCount: 0,
+    lastCapturedAt: null,
+    lastSourceFile: null
+  }]));
+
+  for (const file of inboxFiles(opts.inbox)) {
+    for (const post of parseCaptureFile(file)) {
+      const groupUrl = postGroupUrl(post);
+      const row = byUrl.get(groupUrl);
+      if (!row) continue;
+      row.captureCount += 1;
+      const capturedAt = captureTimestamp(post, file);
+      if (capturedAt && (!row.lastCapturedAt || Date.parse(capturedAt) > Date.parse(row.lastCapturedAt))) {
+        row.lastCapturedAt = capturedAt;
+        row.lastSourceFile = path.relative(ROOT, file);
+      }
+    }
+  }
+
+  const rows = [...byUrl.values()].map(row => {
+    const ageHours = row.lastCapturedAt ? Math.max(0, (now - Date.parse(row.lastCapturedAt)) / 36e5) : null;
+    const status = row.captureCount === 0 ? "never" : ageHours > staleHours ? "stale" : "fresh";
+    return {
+      ...row,
+      status,
+      ageHours: ageHours === null ? null : Math.round(ageHours * 10) / 10
+    };
+  }).sort((a, b) => {
+    const statusRank = { never: 0, stale: 1, fresh: 2 };
+    return (statusRank[a.status] ?? 3) - (statusRank[b.status] ?? 3)
+      || (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1)
+      || a.name.localeCompare(b.name);
+  });
+
+  return {
+    staleHours,
+    totalGroups: rows.length,
+    freshGroups: rows.filter(row => row.status === "fresh").length,
+    staleGroups: rows.filter(row => row.status === "stale").length,
+    neverCapturedGroups: rows.filter(row => row.status === "never").length,
+    groups: rows
+  };
+}
+
 function runScan(opts) {
   const files = inboxFiles(opts.inbox);
   const scoreOpts = {
@@ -525,6 +599,7 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
   const state = readJsonIfExists(statePath, { seenHashes: [] });
   const watchRows = generateSearches(config);
   const candidates = fs.existsSync(candidatesPath) ? readJson(candidatesPath) : [];
+  const coverage = groupCaptureCoverage(config, opts);
   return {
     groups: config.facebook.groups.length,
     groupNames: config.facebook.groups.map(group => group.name),
@@ -538,12 +613,23 @@ function monitorSnapshot(config = loadConfig(), opts = {}) {
     watchTotalSearches: state.watchTotalSearches || watchRows.length,
     watchLimit: state.watchLimit || null,
     watchUpdatedAt: state.watchUpdatedAt || null,
+    groupCoverage: {
+      staleHours: coverage.staleHours,
+      freshGroups: coverage.freshGroups,
+      staleGroups: coverage.staleGroups,
+      neverCapturedGroups: coverage.neverCapturedGroups,
+      needsCapture: coverage.groups.filter(group => group.status !== "fresh").slice(0, 12)
+    },
     cadenceHours: config.facebook.scanCadenceHours || 6
   };
 }
 
 function runStatus(opts = {}) {
   console.log(JSON.stringify(monitorSnapshot(loadConfig(), opts), null, 2));
+}
+
+function runCoverage(opts = {}) {
+  console.log(JSON.stringify(groupCaptureCoverage(loadConfig(), opts), null, 2));
 }
 
 function runNext(opts) {
@@ -560,6 +646,7 @@ function runNext(opts) {
     quiet: true
   });
   const snapshot = monitorSnapshot(config, opts);
+  const coverage = groupCaptureCoverage(config, opts);
   const generatedAt = new Date().toISOString();
   const groupLines = config.facebook.groups.length
     ? config.facebook.groups.map(group => `- ${group.name} (${group.priority || "normal"}): ${group.url}`)
@@ -570,6 +657,7 @@ function runNext(opts) {
   const commands = {
     nextRun: "node scripts/facebook-monitor.mjs next --limit 40 --open",
     importGroups: "pbpaste | node scripts/facebook-monitor.mjs groups - --priority high",
+    coverage: "node scripts/facebook-monitor.mjs coverage",
     captureInbox: "pbpaste | node scripts/facebook-monitor.mjs inbox - --name <group-or-search-name>",
     scan: "node scripts/facebook-monitor.mjs scan --open",
     markSeen: "node scripts/facebook-monitor.mjs scan --update-state",
@@ -577,6 +665,14 @@ function runNext(opts) {
     publishApply: "node scripts/facebook-monitor.mjs publish monitoring/facebook-candidates.json --select <handle-or-hash> --apply"
   };
   const counts = snapshot.candidateStatus;
+  const staleRows = coverage.groups.filter(group => group.status !== "fresh");
+  const freshnessLines = !coverage.groups.length
+    ? ["- No groups configured yet."]
+    : staleRows.length
+      ? staleRows.slice(0, 12).map(group =>
+        `- ${group.status}: ${group.name} (${group.priority})${group.lastCapturedAt ? ` · last ${group.lastCapturedAt}` : ""}`
+      )
+      : ["- All configured groups are fresh."];
   const md = [
     "# Facebook Housing Monitor Next Run",
     "",
@@ -599,6 +695,15 @@ function runNext(opts) {
     `Candidate status counts: pass ${counts.pass || 0}, verify ${counts.verify || 0}, review ${counts.review || 0}, reject ${counts.reject || 0}, duplicate ${counts.duplicate || 0}`,
     `Seen post hashes: ${snapshot.seenHashes}`,
     "",
+    "## Group Freshness",
+    "",
+    `Fresh groups: ${coverage.freshGroups}`,
+    `Stale groups: ${coverage.staleGroups}`,
+    `Never captured groups: ${coverage.neverCapturedGroups}`,
+    `Stale threshold: ${coverage.staleHours} hours`,
+    "",
+    ...freshnessLines,
+    "",
     "## Files",
     "",
     `Watch page: ${relativeOut(watch.html || "monitoring/facebook-watch.html")}`,
@@ -611,6 +716,7 @@ function runNext(opts) {
     "```sh",
     commands.nextRun,
     commands.importGroups,
+    commands.coverage,
     `open ${shellQuote(outputPath(watch.html || "monitoring/facebook-watch.html"))}`,
     commands.captureInbox,
     commands.scan,
@@ -634,6 +740,11 @@ function runNext(opts) {
     inboxFiles: snapshot.inboxFiles,
     candidates: snapshot.candidates,
     candidateStatus: snapshot.candidateStatus,
+    groupCoverage: {
+      freshGroups: coverage.freshGroups,
+      staleGroups: coverage.staleGroups,
+      neverCapturedGroups: coverage.neverCapturedGroups
+    },
     commands
   }, null, 2));
 }
@@ -1123,6 +1234,8 @@ if (!cmd || cmd === "help") {
   }
 } else if (cmd === "status") {
   runStatus(opts);
+} else if (cmd === "coverage") {
+  runCoverage(opts);
 } else if (cmd === "next") {
   runNext(opts);
 } else if (cmd === "inbox") {
