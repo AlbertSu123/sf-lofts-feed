@@ -25,7 +25,8 @@ open monitoring/facebook-capture-bookmarklet.html
 6. Score and dedupe the captures:
 
 ```sh
-node scripts/facebook-monitor.mjs score monitoring/facebook-inbox/*.json --out monitoring/facebook-candidates.json --snippets monitoring/facebook-candidates.generated.js --state monitoring/facebook-monitor-state.json --new-only
+node scripts/facebook-monitor.mjs score monitoring/facebook-inbox/*.json --out monitoring/facebook-candidates.json --snippets monitoring/facebook-candidates.generated.js --review monitoring/facebook-review.html --state monitoring/facebook-monitor-state.json --new-only
+open monitoring/facebook-review.html
 ```
 
 7. After reviewing the scored output, mark scanned posts as seen:

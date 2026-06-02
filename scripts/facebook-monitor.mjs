@@ -75,7 +75,7 @@ function usage() {
   node scripts/facebook-monitor.mjs searches [--out monitoring/facebook-searches.md] [--format json|markdown]
   node scripts/facebook-monitor.mjs watch [--out monitoring/facebook-watch.md] [--html monitoring/facebook-watch.html] [--open] [--limit 24]
   node scripts/facebook-monitor.mjs bookmarklet [--out monitoring/facebook-capture-bookmarklet.html]
-  node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
+  node scripts/facebook-monitor.mjs score <capture.json|capture.txt...> [--out monitoring/facebook-candidates.json] [--snippets monitoring/facebook-candidates.generated.js] [--review monitoring/facebook-review.html] [--state monitoring/facebook-monitor-state.json] [--new-only] [--update-state]
   node scripts/facebook-monitor.mjs publish <candidates.json> --select <handle-or-hash,...> [--apply] [--index index.html]
 
 Raw captures and generated candidates are ignored by git. Review and verify before publishing any private-group lead.`);
@@ -292,6 +292,7 @@ function normalizePost(item, file) {
     url: item.url || links[0] || item.pageUrl || "",
     links,
     images,
+    sourceKind: item.sourceKind || "",
     text
   };
 }
@@ -433,6 +434,7 @@ function scorePost(post, config, existing) {
     rejects,
     url: post.url,
     pageUrl: post.pageUrl,
+    sourceKind: post.sourceKind,
     capturedAt: post.capturedAt,
     sourceFile: post.file,
     summary: summarize(text),
@@ -475,6 +477,52 @@ function js(value) {
 
 function outputPath(file) {
   return path.isAbsolute(file) ? file : path.join(ROOT, file);
+}
+
+function generateReviewHtml(candidates, opts) {
+  const out = opts.review || "monitoring/facebook-review.html";
+  const generatedAt = new Date().toISOString();
+  const rows = candidates.map(c => {
+    const publishCommand = `node scripts/facebook-monitor.mjs publish ${opts.out || DEFAULT_CANDIDATES_PATH} --select ${c.textHash.slice(0, 10)}`;
+    return `<article class="card ${escapeHtml(c.status)}">
+  <header>
+    <strong>${escapeHtml(c.status.toUpperCase())}</strong>
+    <span>score ${escapeHtml(c.score)}</span>
+    <span>${escapeHtml(priceLabel(c.price))}</span>
+    <span>${escapeHtml(ppbLabel(c.pricePerBedroom))}</span>
+  </header>
+  <h2>${escapeHtml(c.location)}</h2>
+  <p>${escapeHtml(c.summary)}</p>
+  <dl>
+    <dt>Handle</dt><dd><code>${escapeHtml(c.handle)}</code></dd>
+    <dt>Hash</dt><dd><code>${escapeHtml(c.textHash.slice(0, 12))}</code></dd>
+    <dt>Beds/Baths/Sqft</dt><dd>${escapeHtml(c.bedrooms ?? "?")} / ${escapeHtml(c.bathrooms ?? "?")} / ${escapeHtml(c.sqft ?? "?")}</dd>
+    <dt>Signals</dt><dd>${escapeHtml(c.signals.join(", ") || "none")}</dd>
+    <dt>Seen Before</dt><dd>${c.seenBefore ? "yes" : "no"}</dd>
+  </dl>
+  <p class="actions">${c.url ? `<a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">open lead</a>` : ""}${c.pageUrl ? `<a href="${escapeHtml(c.pageUrl)}" target="_blank" rel="noopener">source page</a>` : ""}</p>
+  <label>Publish command</label>
+  <input readonly value="${escapeHtml(publishCommand)}">
+</article>`;
+  }).join("\n");
+  const html = `<!doctype html>
+<meta charset="utf-8">
+<title>Facebook Housing Candidate Review</title>
+<style>
+body{font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:24px;color:#111;background:#f7f7f7}
+h1{margin:0 0 4px}.meta{color:#555;margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.card{background:white;border:1px solid #ddd;border-left:7px solid #999;border-radius:8px;padding:14px;box-shadow:0 1px 3px #0001}
+.pass{border-left-color:#179b55}.verify{border-left-color:#c47f17}.reject{opacity:.72;border-left-color:#cc3333}.duplicate{opacity:.65;border-left-color:#777}
+header{display:flex;flex-wrap:wrap;gap:8px;color:#555}header strong{color:#111}h2{font-size:17px;margin:10px 0 8px}p{line-height:1.45}dl{display:grid;grid-template-columns:90px 1fr;gap:5px;margin:12px 0}dt{color:#666}dd{margin:0}code,input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}input{width:100%;padding:7px;border:1px solid #ccc;border-radius:5px}.actions{display:flex;gap:10px}.actions a{color:#06c}
+</style>
+<h1>Facebook Housing Candidate Review</h1>
+<div class="meta">Generated ${escapeHtml(generatedAt)} · ${candidates.length} candidates</div>
+<main class="grid">
+${rows || "<p>No candidates.</p>"}
+</main>
+`;
+  fs.writeFileSync(outputPath(out), html);
+  return out;
 }
 
 function generateSnippet(c) {
@@ -543,6 +591,8 @@ function runScore(files, opts) {
     fs.writeFileSync(outputPath(opts.snippets), body);
   }
 
+  const review = opts.review ? generateReviewHtml(candidates, opts) : null;
+
   const top = candidates.slice(0, 20).map(c => ({
     status: c.status,
     score: c.score,
@@ -563,6 +613,7 @@ function runScore(files, opts) {
     duplicate: candidates.filter(c => c.status === "duplicate").length,
     out: opts.out || null,
     snippets: opts.snippets || null,
+    review,
     state: opts.state || null,
     stateUpdated: Boolean(opts["update-state"] && statePath),
     top
