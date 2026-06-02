@@ -59,18 +59,114 @@
     if (buttons.length) await wait(600);
     return buttons.length;
   }
+  function compactCardFromLink(link) {
+    let node = link;
+    let best = link;
+    for (let i = 0; i < 7 && node.parentElement; i++) {
+      node = node.parentElement;
+      const text = clean(node.innerText || node.textContent);
+      if (housingPattern.test(text) && text.length >= 35 && text.length <= 2600) best = node;
+      if (text.length > 2600) break;
+    }
+    return best;
+  }
+  const postsByKey = new Map();
+  const groups = new Map();
+  function collectVisiblePosts() {
+    const linkSeeds = Array.from(document.querySelectorAll([
+      'a[href*="/marketplace/item"]',
+      'a[href*="/groups/"][href*="/posts/"]',
+      'a[href*="/permalink/"]',
+      'a[href*="/posts/"]',
+      'a[href*="/share/"]'
+    ].join(",")));
+    const articles = [
+      ...document.querySelectorAll('[role="article"], [data-pagelet*="FeedUnit"]'),
+      ...linkSeeds.map(compactCardFromLink)
+    ];
+    for (const article of articles) {
+      const text = clean(article.innerText || article.textContent);
+      if (!housingPattern.test(text) || text.length < 35) continue;
+      const links = Array.from(article.querySelectorAll('a[href]'))
+        .map(a => a.href)
+        .filter(href => linkPattern.test(href))
+        .slice(0, 12);
+      if (!links.length && !housingPattern.test(location.href)) continue;
+      const images = Array.from(article.querySelectorAll('img[src]'))
+        .map(img => img.src)
+        .filter(src => /scontent|fbcdn/i.test(src))
+        .slice(0, 6);
+      const key = text.slice(0, 240).replace(/\s+/g, " ");
+      const leadUrl = primaryLeadUrl(links);
+      postsByKey.set(key, {
+        capturedAt: new Date().toISOString(),
+        pageTitle: document.title,
+        pageUrl: location.href,
+        url: leadUrl,
+        links,
+        images,
+        sourceKind: links.some(href => /\/marketplace\//i.test(href)) || /\/marketplace\//i.test(location.href) ? "marketplace" : "post",
+        captureMode,
+        expandedControls,
+        text
+      });
+    }
+  }
+  function collectVisibleGroups() {
+    for (const a of Array.from(document.querySelectorAll('a[href*="/groups/"]'))) {
+      const url = canonicalGroupUrl(a.href);
+      if (!url || /\/(posts|permalink|search|media|files|members|about|photos)\b/i.test(a.href)) continue;
+      const card = a.closest('[role="listitem"], [role="article"], [data-visualcompletion], li, div') || a;
+      const cardText = clean(card.innerText || card.textContent);
+      const linkText = clean(a.innerText || a.textContent);
+      const name = (linkText.length >= 3 && linkText.length <= 120 ? linkText : cardText.split("\n").find(line => line.length >= 3 && line.length <= 120)) || url;
+      groups.set(url, {
+        name,
+        url,
+        housingLike: groupHousingPattern.test(`${name}\n${cardText}\n${url}`),
+        capturedAt: new Date().toISOString(),
+        pageTitle: document.title,
+        pageUrl: location.href,
+        sourceKind: "group"
+      });
+    }
+  }
+  function collectVisiblePage() {
+    const beforePosts = postsByKey.size;
+    const beforeGroups = groups.size;
+    collectVisiblePosts();
+    collectVisibleGroups();
+    return {
+      postsAdded: postsByKey.size - beforePosts,
+      groupsAdded: groups.size - beforeGroups,
+      posts: postsByKey.size,
+      groups: groups.size
+    };
+  }
   let expandedControls = await expandVisibleText();
   async function loadMorePosts() {
-    if (!scrollSteps) {
-      return { captureMode, requestedScrollSteps: 0, completedScrollSteps: 0, startY: window.scrollY, endY: window.scrollY };
-    }
     const startY = window.scrollY;
+    const collectionStats = [collectVisiblePage()];
+    if (!scrollSteps) {
+      return {
+        captureMode,
+        requestedScrollSteps: 0,
+        completedScrollSteps: 0,
+        collectionPasses: collectionStats.length,
+        collectedPosts: postsByKey.size,
+        collectedGroups: groups.size,
+        collectionStats,
+        startY,
+        endY: window.scrollY
+      };
+    }
     let previousHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
     let completed = 0;
     for (let i = 0; i < scrollSteps; i++) {
       window.scrollBy(0, Math.max(650, Math.round(window.innerHeight * 0.85)));
       await wait(900);
       expandedControls += await expandVisibleText();
+      collectionStats.push(collectVisiblePage());
       const nextHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
       completed += 1;
       if (nextHeight <= previousHeight && window.scrollY + window.innerHeight >= nextHeight - 80) break;
@@ -84,11 +180,14 @@
       captureMode,
       requestedScrollSteps: scrollSteps,
       completedScrollSteps: completed,
+      collectionPasses: collectionStats.length,
+      collectedPosts: postsByKey.size,
+      collectedGroups: groups.size,
+      collectionStats,
       startY,
       endY: window.scrollY
     };
   }
-  const scrollCapture = await loadMorePosts();
   function downloadPayload(payload) {
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -105,77 +204,8 @@
     }, 1000);
     return filename;
   }
-  const linkSeeds = Array.from(document.querySelectorAll([
-    'a[href*="/marketplace/item"]',
-    'a[href*="/groups/"][href*="/posts/"]',
-    'a[href*="/permalink/"]',
-    'a[href*="/posts/"]',
-    'a[href*="/share/"]'
-  ].join(",")));
-  function compactCardFromLink(link) {
-    let node = link;
-    let best = link;
-    for (let i = 0; i < 7 && node.parentElement; i++) {
-      node = node.parentElement;
-      const text = clean(node.innerText || node.textContent);
-      if (housingPattern.test(text) && text.length >= 35 && text.length <= 2600) best = node;
-      if (text.length > 2600) break;
-    }
-    return best;
-  }
-  const articles = [
-    ...document.querySelectorAll('[role="article"], [data-pagelet*="FeedUnit"]'),
-    ...linkSeeds.map(compactCardFromLink)
-  ];
-  const uniq = new Map();
-  for (const article of articles) {
-    const text = clean(article.innerText || article.textContent);
-    if (!housingPattern.test(text) || text.length < 35) continue;
-    const links = Array.from(article.querySelectorAll('a[href]'))
-      .map(a => a.href)
-      .filter(href => linkPattern.test(href))
-      .slice(0, 12);
-    if (!links.length && !housingPattern.test(location.href)) continue;
-    const images = Array.from(article.querySelectorAll('img[src]'))
-      .map(img => img.src)
-      .filter(src => /scontent|fbcdn/i.test(src))
-      .slice(0, 6);
-    const key = text.slice(0, 240).replace(/\s+/g, " ");
-    const leadUrl = primaryLeadUrl(links);
-    uniq.set(key, {
-      capturedAt: new Date().toISOString(),
-      pageTitle: document.title,
-      pageUrl: location.href,
-      url: leadUrl,
-      links,
-      images,
-      sourceKind: links.some(href => /\/marketplace\//i.test(href)) || /\/marketplace\//i.test(location.href) ? "marketplace" : "post",
-      captureMode,
-      expandedControls,
-      text
-    });
-  }
-  const posts = Array.from(uniq.values());
-  const groups = Array.from(document.querySelectorAll('a[href*="/groups/"]'))
-    .map(a => {
-      const url = canonicalGroupUrl(a.href);
-      if (!url || /\/(posts|permalink|search|media|files|members|about|photos)\b/i.test(a.href)) return null;
-      const card = a.closest('[role="listitem"], [role="article"], [data-visualcompletion], li, div') || a;
-      const cardText = clean(card.innerText || card.textContent);
-      const linkText = clean(a.innerText || a.textContent);
-      const name = (linkText.length >= 3 && linkText.length <= 120 ? linkText : cardText.split("\n").find(line => line.length >= 3 && line.length <= 120)) || url;
-      return {
-        name,
-        url,
-        housingLike: groupHousingPattern.test(`${name}\n${cardText}\n${url}`),
-        capturedAt: new Date().toISOString(),
-        pageTitle: document.title,
-        pageUrl: location.href,
-        sourceKind: "group"
-      };
-    })
-    .filter(Boolean)
-    .reduce((map, group) => map.set(group.url, group), new Map());
+  const scrollCapture = await loadMorePosts();
+  const posts = Array.from(postsByKey.values());
   const payload = JSON.stringify({
     capturedAt: new Date().toISOString(),
     pageTitle: document.title,
@@ -188,10 +218,10 @@
   }, null, 2);
   const filename = downloadPayload(payload);
   navigator.clipboard.writeText(payload).then(
-    () => alert(`Downloaded ${filename} and copied ${posts.length} housing-like posts plus ${groups.size} visible groups to clipboard. Mode: ${captureMode}; scrolled ${scrollCapture.completedScrollSteps}/${scrollCapture.requestedScrollSteps}; expanded ${expandedControls} controls.`),
+    () => alert(`Downloaded ${filename} and copied ${posts.length} housing-like posts plus ${groups.size} visible groups to clipboard. Mode: ${captureMode}; scrolled ${scrollCapture.completedScrollSteps}/${scrollCapture.requestedScrollSteps}; collected ${scrollCapture.collectionPasses} passes; expanded ${expandedControls} controls.`),
     () => {
       console.log(payload);
-      alert(`Downloaded ${filename}. Clipboard write failed, but ${posts.length} posts and ${groups.size} groups were printed to the console. Mode: ${captureMode}; scrolled ${scrollCapture.completedScrollSteps}/${scrollCapture.requestedScrollSteps}; expanded ${expandedControls} controls.`);
+      alert(`Downloaded ${filename}. Clipboard write failed, but ${posts.length} posts and ${groups.size} groups were printed to the console. Mode: ${captureMode}; scrolled ${scrollCapture.completedScrollSteps}/${scrollCapture.requestedScrollSteps}; collected ${scrollCapture.collectionPasses} passes; expanded ${expandedControls} controls.`);
     }
   );
 })();

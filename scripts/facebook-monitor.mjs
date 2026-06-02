@@ -658,7 +658,7 @@ textarea{width:100%;height:135px;font:12px ui-monospace,SFMono-Regular,Menlo,mon
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style>
 <h1>Facebook Housing Capture Bookmarklet</h1>
-<p>Drag these buttons to the browser bookmarks bar. On Facebook group lists, group searches, post searches, or Marketplace results pages, click quick capture for the currently visible page, or deep capture to scroll several pagefuls before exporting.</p>
+<p>Drag these buttons to the browser bookmarks bar. On Facebook group lists, group searches, post searches, or Marketplace results pages, click quick capture for the currently visible page, or deep capture to collect posts and group links during several scroll passes before exporting.</p>
 <p><a class="bookmarklet" href="${href}">Capture FB Housing</a><a class="bookmarklet deep" href="${deepHref}">Capture FB Housing Deep</a></p>
 <p>If dragging does not work, create a new bookmark named <code>Capture FB Housing</code> and paste this URL:</p>
 <textarea readonly>${escapeHtml(href)}</textarea>

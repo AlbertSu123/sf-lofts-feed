@@ -5,6 +5,7 @@ import path from "node:path";
 import childProcess from "node:child_process";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const captureSnippet = fs.readFileSync(path.join(ROOT, "monitoring/facebook-capture-snippet.js"), "utf8");
 
 function run(args, opts = {}) {
   const result = childProcess.spawnSync(process.execPath, ["scripts/facebook-monitor.mjs", ...args], {
@@ -31,6 +32,9 @@ function assertJsonEqual(actual, expected, label) {
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sf-lofts-facebook-monitor-test-"));
+
+assert(captureSnippet.includes("function collectVisiblePage()"), "capture snippet should collect visible posts during scroll");
+assert(captureSnippet.includes("collectionPasses"), "capture snippet should report incremental collection passes");
 
 const priceCases = path.join(tmp, "price-cases.json");
 fs.writeFileSync(priceCases, JSON.stringify([
